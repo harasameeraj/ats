@@ -1,0 +1,23 @@
+# Secrets & Environment
+.env
+.env.local
+backend/.env
+backend/stitch_ats.db
+backend/uploads/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*/*/__pycache__/
+
+# Node & Build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.env*
+
+# System
+.DS_Store
+Thumbs.db
