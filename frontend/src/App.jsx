@@ -4,6 +4,8 @@ import Dashboard from './pages/Dashboard'
 import Screening from './pages/Screening'
 import Interviews from './pages/Interviews'
 import Onboarding from './pages/Onboarding'
+import Settings from './pages/Settings'
+import Assessment from './pages/Assessment'
 import { api } from './api/client'
 import './App.css'
 
@@ -12,6 +14,7 @@ const pageNames = {
   '/screening': 'AI Screening',
   '/interviews': 'Interviews',
   '/onboarding': 'Onboarding',
+  '/settings': 'Settings',
 }
 
 function Topbar() {
@@ -193,76 +196,97 @@ function Topbar() {
   )
 }
 
-function App() {
+function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const location = useLocation()
+  const isAssessmentPage = location.pathname.startsWith('/assessment/')
+
+  if (isAssessmentPage) {
+    return (
+      <Routes>
+        <Route path="/assessment/:token" element={<Assessment />} />
+      </Routes>
+    )
+  }
 
   return (
+    <div className="app-layout">
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-logo">
+            <svg viewBox="0 0 32 32" fill="none" width="28" height="28">
+              <rect width="32" height="32" rx="8" fill="url(#slg)" />
+              <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              <defs><linearGradient id="slg" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#6366f1" /><stop offset="1" stopColor="#a855f7" /></linearGradient></defs>
+            </svg>
+            {sidebarOpen && <span className="sidebar-title">Stitch ATS</span>}
+          </div>
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            {sidebarOpen ? '◁' : '▷'}
+          </button>
+        </div>
+
+        <nav className="sidebar-nav">
+          <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">📊</span>
+            {sidebarOpen && <span>Dashboard</span>}
+          </NavLink>
+          <NavLink to="/screening" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">🤖</span>
+            {sidebarOpen && <span>AI Screening</span>}
+          </NavLink>
+          <NavLink to="/interviews" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">📅</span>
+            {sidebarOpen && <span>Interviews</span>}
+          </NavLink>
+          <NavLink to="/onboarding" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">✅</span>
+            {sidebarOpen && <span>Onboarding</span>}
+          </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <span className="nav-icon">⚙️</span>
+            {sidebarOpen && <span>Settings</span>}
+          </NavLink>
+        </nav>
+
+        {sidebarOpen && (
+          <div className="sidebar-user">
+            <div className="sidebar-user-avatar">S</div>
+            <div className="sidebar-user-info">
+              <div className="sidebar-user-name">Sameeraj</div>
+              <div className="sidebar-user-role">HR Admin</div>
+            </div>
+          </div>
+        )}
+
+        <div className="sidebar-footer">
+          {sidebarOpen && <span className="sidebar-version">v1.0.0</span>}
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="main-content">
+        <Topbar />
+        <div className="content-area">
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/screening" element={<Screening />} />
+            <Route path="/interviews" element={<Interviews />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function App() {
+  return (
     <BrowserRouter>
-      <div className="app-layout">
-        {/* Sidebar */}
-        <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
-          <div className="sidebar-header">
-            <div className="sidebar-logo">
-              <svg viewBox="0 0 32 32" fill="none" width="28" height="28">
-                <rect width="32" height="32" rx="8" fill="url(#slg)" />
-                <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                <defs><linearGradient id="slg" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#6366f1" /><stop offset="1" stopColor="#a855f7" /></linearGradient></defs>
-              </svg>
-              {sidebarOpen && <span className="sidebar-title">Stitch ATS</span>}
-            </div>
-            <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              {sidebarOpen ? '◁' : '▷'}
-            </button>
-          </div>
-
-          <nav className="sidebar-nav">
-            <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon">📊</span>
-              {sidebarOpen && <span>Dashboard</span>}
-            </NavLink>
-            <NavLink to="/screening" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon">🤖</span>
-              {sidebarOpen && <span>AI Screening</span>}
-            </NavLink>
-            <NavLink to="/interviews" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon">📅</span>
-              {sidebarOpen && <span>Interviews</span>}
-            </NavLink>
-            <NavLink to="/onboarding" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon">✅</span>
-              {sidebarOpen && <span>Onboarding</span>}
-            </NavLink>
-          </nav>
-
-          {sidebarOpen && (
-            <div className="sidebar-user">
-              <div className="sidebar-user-avatar">S</div>
-              <div className="sidebar-user-info">
-                <div className="sidebar-user-name">Sameeraj</div>
-                <div className="sidebar-user-role">HR Admin</div>
-              </div>
-            </div>
-          )}
-
-          <div className="sidebar-footer">
-            {sidebarOpen && <span className="sidebar-version">v1.0.0</span>}
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="main-content">
-          <Topbar />
-          <div className="content-area">
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/screening" element={<Screening />} />
-              <Route path="/interviews" element={<Interviews />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-            </Routes>
-          </div>
-        </main>
-      </div>
+      <AppContent />
     </BrowserRouter>
   )
 }

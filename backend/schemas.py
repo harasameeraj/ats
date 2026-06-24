@@ -19,6 +19,7 @@ class JobResponse(BaseModel):
     title: str
     description: str
     jd_filename: Optional[str]
+    screening_questions: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -36,6 +37,13 @@ class CandidateResponse(BaseModel):
     match_score: Optional[float]
     rejection_reason: Optional[str]
     resume_filename: Optional[str]
+    assessment_token: Optional[str] = None
+    assessment_score: Optional[float] = None
+    assessment_status: Optional[str] = None
+    assessment_responses: Optional[str] = None
+    assessment_violations: Optional[int] = 0
+    github_url: Optional[str] = None
+    github_analysis: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -148,3 +156,52 @@ class EmailGenerationRequest(BaseModel):
     candidate_id: int
     email_type: str  # invitation | offer_letter
     details: Optional[dict] = None
+
+class EmailSendRequest(BaseModel):
+    to_email: str
+    subject: str
+    body: str
+
+# ===== SETTINGS =====
+class SMTPSettingsUpdate(BaseModel):
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    smtp_from_name: str
+
+class SMTPSettingsResponse(BaseModel):
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password_masked: str
+    smtp_from_name: str
+
+
+# ===== ASSESSMENT =====
+class AssessmentInfoResponse(BaseModel):
+    candidate_name: str
+    job_title: str
+    questions: List[str]
+
+class AssessmentResponseSubmit(BaseModel):
+    answers: List[str]
+    violations: Optional[int] = 0
+
+
+# ===== CANDIDATE SOURCING =====
+class SourcingRequest(BaseModel):
+    job_id: int
+    location: str
+
+class ImportSourcedRequest(BaseModel):
+    job_id: int
+    name: str
+    email: str
+    github_url: Optional[str] = None
+    bio: str
+    match_score: float
+    match_reason: str
+    skills: List[str]
+
+

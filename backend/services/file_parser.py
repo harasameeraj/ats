@@ -77,3 +77,13 @@ def extract_phone(text: str) -> str | None:
     """Try to extract a phone number from text."""
     match = re.search(r"[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]{7,15}", text)
     return match.group(0).strip() if match else None
+
+
+def extract_github_url(text: str) -> str | None:
+    """Try to extract a GitHub profile URL from resume text."""
+    # Pattern to match github.com/username
+    match = re.search(r"(https?://)?(www\.)?github\.com/([a-zA-Z0-9_-]+)", text, re.IGNORECASE)
+    if match:
+        username = match.group(3)
+        return f"https://github.com/{username}"
+    return None

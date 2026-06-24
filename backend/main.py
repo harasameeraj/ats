@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db
-from .routers import screening, dashboard, interviews, onboarding
+from .routers import screening, dashboard, interviews, onboarding, settings, assessment
 
 app = FastAPI(
     title="Stitch ATS API",
@@ -39,11 +39,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.staticfiles import StaticFiles
+
 # Include routers
 app.include_router(screening.router)
 app.include_router(dashboard.router)
 app.include_router(interviews.router)
 app.include_router(onboarding.router)
+app.include_router(settings.router)
+app.include_router(assessment.router)
+
+# Mount static files for recordings/resumes
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.on_event("startup")

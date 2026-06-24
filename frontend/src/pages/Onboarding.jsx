@@ -120,11 +120,11 @@ export default function Onboarding() {
   async function handleSendEmail() {
     setEmailModal(prev => ({ ...prev, sending: true }))
     try {
-      await new Promise(resolve => setTimeout(resolve, 1200))
+      await api.sendEmail(emailModal.candidateEmail, emailModal.subject, emailModal.body)
       setEmailModal(prev => ({ ...prev, isOpen: false, sending: false }))
       showToast(`Offer letter successfully dispatched to ${emailModal.candidateEmail}!`)
     } catch (e) {
-      showToast('Failed to send email', 'error')
+      showToast(e.message || 'Failed to send email', 'error')
       setEmailModal(prev => ({ ...prev, sending: false }))
     }
   }

@@ -16,6 +16,7 @@ class Job(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     jd_filename = Column(String, nullable=True)
+    screening_questions = Column(Text, nullable=True)  # JSON list of questions
     created_at = Column(DateTime, default=datetime.utcnow)
 
     screenings = relationship("Screening", back_populates="job", cascade="all, delete-orphan")
@@ -34,6 +35,14 @@ class Candidate(Base):
     rejection_reason = Column(Text, nullable=True)
     resume_text = Column(Text, nullable=True)
     resume_filename = Column(String, nullable=True)
+    assessment_token = Column(String, index=True, nullable=True)
+    assessment_score = Column(Float, nullable=True)
+    assessment_status = Column(String, nullable=True)  # pending, passed, failed
+    assessment_responses = Column(Text, nullable=True)  # JSON representation of answers & AI feedback
+    assessment_violations = Column(Integer, default=0, nullable=True)
+    github_url = Column(String, nullable=True)
+    github_analysis = Column(Text, nullable=True)
+    assessment_questions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     screenings = relationship("Screening", back_populates="candidate", cascade="all, delete-orphan")
@@ -96,3 +105,11 @@ class Activity(Base):
     icon = Column(String, default="📋")
     color = Column(String, default="#6366f1")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String, nullable=True)
+

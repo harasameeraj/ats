@@ -9,6 +9,13 @@ export default function Interviews() {
   const [suggestions, setSuggestions] = useState(null)
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
+  const [githubReport, setGithubReport] = useState(null)
+  const [scanningId, setScanningId] = useState(null)
+
+  // Video Playback Modal States
+  const [showVideoModal, setShowVideoModal] = useState(false)
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoTitle, setVideoTitle] = useState('')
 
   // Email Draft Modal States
   const [emailModal, setEmailModal] = useState({
@@ -127,11 +134,11 @@ export default function Interviews() {
   async function handleSendEmail() {
     setEmailModal(prev => ({ ...prev, sending: true }))
     try {
-      await new Promise(resolve => setTimeout(resolve, 1200))
+      await api.sendEmail(emailModal.candidateEmail, emailModal.subject, emailModal.body)
       setEmailModal(prev => ({ ...prev, isOpen: false, sending: false }))
       showToast(`Email invitation successfully dispatched to ${emailModal.candidateEmail}!`)
     } catch (e) {
-      showToast('Failed to send email', 'error')
+      showToast(e.message || 'Failed to send email', 'error')
       setEmailModal(prev => ({ ...prev, sending: false }))
     }
   }
@@ -195,6 +202,49 @@ export default function Interviews() {
       loadData()
     } catch (e) {
       showToast(e.message, 'error')
+    }
+  }
+
+  async function handleCandidateDecision(candidateId, action) {
+    try {
+      await api.candidateAction(candidateId, action)
+      showToast(`Candidate marked as ${action === 'hire' ? 'Hired' : 'Rejected'}!`)
+      loadData()
+    } catch (e) {
+      showToast(e.message, 'error')
+    }
+  }
+
+  async function handleScanGithub(cand) {
+    setScanningId(cand.id)
+    try {
+      const report = await api.scanGithub(cand.id)
+      setGithubReport(report)
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_analysis: JSON.stringify(report) } : c))
+    } catch (e) {
+      showToast(e.message || "Failed to scan GitHub profile.", "error")
+    } finally {
+      setScanningId(null)
+    }
+  }
+
+  function handleWatchVideo(candidateId, candidateName) {
+    const backendUrl = 'http://localhost:8000';
+    setVideoUrl(`${backendUrl}/uploads/recordings/${candidateId}_recording.webm`);
+    setVideoTitle(`Webcam Monitoring: ${candidateName}`);
+    setShowVideoModal(true);
+  }
+
+  async function handlePurgeFailed() {
+    if (!window.confirm("Are you sure you want to permanently delete all candidates who failed (< 60% score) or violated the anti-cheating policy (>= 3 violations)?")) {
+      return
+    }
+    try {
+      const res = await api.purgeFailedCandidates()
+      showToast(res.message || "Failed and violated candidates cleared successfully!")
+      loadData()
+    } catch (e) {
+      showToast(e.message || "Failed to purge candidates", 'error')
     }
   }
 
@@ -293,6 +343,13 @@ export default function Interviews() {
     iv.candidate_status !== 'rejected'
   )
 
+  const testCandidates = allCandidates.filter(c => {
+    if (!c.assessment_status) return false
+    if (['hired', 'onboarded', 'completed'].includes(c.status)) return false
+    const hasActiveInterview = interviews.some(iv => iv.candidate_id === c.id && iv.status !== 'cancelled')
+    return !hasActiveInterview
+  })
+
   const filteredInterviews = activeInterviews.filter(iv => {
     if (!selectedDate) return true
     const ivDate = new Date(iv.scheduled_at)
@@ -315,10 +372,26 @@ export default function Interviews() {
         <p className="page-desc">Intelligent coordination for your hiring pipeline.</p>
       </div>
 
-      <div style={{ display: 'flex', gap: '.75rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', gap: '.75rem', marginBottom: '2rem', alignItems: 'center', width: '100%' }}>
         <button className="btn btn-primary" onClick={handleOpenSchedule}>+ Schedule New</button>
         <button className="btn btn-outline" onClick={() => { if (candidates.length > 0) { setForm(f => ({...f, candidate_id: candidates[0].id})); handleSuggest() } }}>
           ✦ AI Suggest Times
+        </button>
+        <button 
+          className="btn btn-outline" 
+          onClick={handlePurgeFailed}
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '6px', 
+            marginLeft: 'auto', 
+            borderColor: '#f87171', 
+            color: '#ef4444', 
+            background: '#fef2f2',
+            fontWeight: 700 
+          }}
+        >
+          🗑️ Clear Failed & Violated
         </button>
       </div>
 
@@ -448,14 +521,14 @@ export default function Interviews() {
               )}
             </div>
 
-            {[...pending, ...confirmed, ...completed].length === 0 ? (
+            {([...pending, ...confirmed, ...completed].length === 0 && (!selectedDate ? testCandidates.length === 0 : true)) ? (
               <div className="empty-state" style={{ padding: '2rem 1rem' }}>
                 <div className="empty-icon">📅</div>
                 <div className="empty-text">No interviews scheduled</div>
                 <div className="empty-sub">
                   {selectedDate
                     ? 'No candidates are booked for this date.'
-                    : 'Schedule one to get started'
+                    : 'Invite candidates to AI tests or schedule one to get started.'
                   }
                 </div>
                 {selectedDate && (
@@ -469,39 +542,225 @@ export default function Interviews() {
                 )}
               </div>
             ) : (
-              [...pending, ...confirmed, ...completed].map(iv => (
-                <div className="interview-card" key={iv.id} style={{ marginTop: '.75rem' }}>
-                  <div className="iv-time">{formatTime(iv.scheduled_at).split(' ')[0]}</div>
-                  <div className="iv-info">
-                    <div className="iv-name">{iv.candidate_name}</div>
-                    <div className="iv-role">with {iv.interviewer_name} • {iv.duration_mins}m</div>
-                    <div style={{ fontSize: '.65rem', color: '#8888a0' }}>{formatDate(iv.scheduled_at)}</div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
-                    <span className={`status-badge status-${iv.status}`}>{iv.status}</span>
-                    {iv.status === 'pending' && (
-                      <>
-                        <button className="btn btn-sm btn-outline" onClick={() => handleStatusChange(iv.id, 'confirmed')}>Confirm</button>
-                        <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleOpenEmailModal(iv)}>✉ Draft Invite</button>
-                        <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleStatusChange(iv.id, 'cancelled')}>Cancel</button>
-                      </>
-                    )}
-                    {iv.status === 'confirmed' && (
-                      <>
-                        <button className="btn btn-sm btn-outline" onClick={() => handleStatusChange(iv.id, 'completed')}>Complete</button>
-                        <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleOpenEmailModal(iv)}>✉ Draft Invite</button>
-                        <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleStatusChange(iv.id, 'cancelled')}>Cancel</button>
-                      </>
-                    )}
-                    {iv.status === 'completed' && (
-                      <div style={{ display: 'flex', gap: '.25rem', marginTop: '.25rem' }}>
-                        <button className="btn btn-sm btn-success" onClick={() => handleDecision(iv.id, 'hire')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Hire</button>
-                        <button className="btn btn-sm btn-danger" onClick={() => handleDecision(iv.id, 'reject')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Reject</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+                {/* 1. Show scheduled interviews first */}
+                {[...pending, ...confirmed, ...completed].map(iv => (
+                  <div className="interview-card" key={`iv-${iv.id}`}>
+                    <div className="iv-time">{formatTime(iv.scheduled_at).split(' ')[0]}</div>
+                    <div className="iv-info">
+                      <div className="iv-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {iv.candidate_name}
+                        {iv.assessment_status === 'passed' && (
+                          <span style={{ background: '#e6fbf3', color: '#10b981', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                            Passed ({iv.assessment_score}%)
+                          </span>
+                        )}
+                        {iv.assessment_status === 'failed' && (
+                          <span style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                            Failed ({iv.assessment_score}%)
+                          </span>
+                        )}
+                        {iv.assessment_status && iv.assessment_status !== 'pending' && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleWatchVideo(iv.candidate_id, iv.candidate_name)}
+                            style={{
+                              borderColor: 'var(--purple)',
+                              color: 'var(--purple)',
+                              fontSize: '0.62rem',
+                              padding: '1px 6px',
+                              fontWeight: 'bold',
+                              borderRadius: '4px',
+                              background: '#fcfcfc',
+                              lineHeight: 1
+                            }}
+                          >
+                            📹 Video
+                          </button>
+                        )}
+                        {iv.assessment_status === 'pending' && (
+                          <span style={{ background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                            Pending
+                          </span>
+                        )}
+                        {iv.assessment_violations > 0 && (
+                          <span style={{ background: iv.assessment_violations >= 3 ? '#fef2f2' : '#fffbeb', color: iv.assessment_violations >= 3 ? '#ef4444' : '#d97706', border: iv.assessment_violations >= 3 ? '1px solid #fca5a5' : '1px solid #fde68a', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold', marginLeft: '4px' }}>
+                            ⚠️ {iv.assessment_violations} {iv.assessment_violations === 1 ? 'Violation' : 'Violations'}
+                          </span>
+                        )}
                       </div>
-                    )}
+                      <div className="iv-role">with {iv.interviewer_name} • {iv.duration_mins}m</div>
+                      <div style={{ fontSize: '.65rem', color: '#8888a0' }}>{formatDate(iv.scheduled_at)}</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                      <span className={`status-badge status-${iv.status}`}>{iv.status}</span>
+                      {iv.status === 'pending' && (
+                        <>
+                          <button className="btn btn-sm btn-outline" onClick={() => handleStatusChange(iv.id, 'confirmed')}>Confirm</button>
+                          <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleOpenEmailModal(iv)}>✉ Draft Invite</button>
+                          <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleStatusChange(iv.id, 'cancelled')}>Cancel</button>
+                        </>
+                      )}
+                      {iv.status === 'confirmed' && (
+                        <>
+                          <button className="btn btn-sm btn-outline" onClick={() => handleStatusChange(iv.id, 'completed')}>Complete</button>
+                          <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleOpenEmailModal(iv)}>✉ Draft Invite</button>
+                          <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleStatusChange(iv.id, 'cancelled')}>Cancel</button>
+                        </>
+                      )}
+                      {iv.status === 'completed' && (
+                        <div style={{ display: 'flex', gap: '.25rem', marginTop: '.25rem' }}>
+                          <button className="btn btn-sm btn-success" onClick={() => handleDecision(iv.id, 'hire')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Hire</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDecision(iv.id, 'reject')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Reject</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+
+                {/* 2. Show active AI assessments (only if no calendar date filter is active) */}
+                {!selectedDate && testCandidates.map(cand => (
+                  <div className="interview-card" key={`test-${cand.id}`} style={{ borderLeft: '3px solid var(--purple)' }}>
+                    <div className="iv-time" style={{ fontSize: '0.82rem', color: 'var(--purple)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, minWidth: '85px', textAlign: 'center' }}>
+                      <span>AI TEST</span>
+                      <span style={{ fontSize: '0.62rem', opacity: 0.8 }}>STAGE</span>
+                    </div>
+                    <div className="iv-info">
+                      <div className="iv-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {cand.name}
+                        {cand.assessment_violations >= 3 ? (
+                          <span style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                            Violated (⚠️ {cand.assessment_violations} Violations)
+                          </span>
+                        ) : (
+                          <>
+                            {cand.assessment_status === 'passed' && cand.assessment_score >= 60 && (
+                              <span style={{ background: '#e6fbf3', color: '#10b981', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                                Passed ({cand.assessment_score}%)
+                              </span>
+                            )}
+                            {cand.assessment_status !== 'pending' && cand.assessment_score < 60 && (
+                              <span style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                                Failed ({cand.assessment_score}%)
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {cand.assessment_status === 'pending' && (
+                          <span style={{ background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
+                            Pending
+                          </span>
+                        )}
+                        {cand.assessment_violations > 0 && cand.assessment_violations < 3 && (
+                          <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold', marginLeft: '4px' }}>
+                            ⚠️ {cand.assessment_violations} {cand.assessment_violations === 1 ? 'Violation' : 'Violations'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="iv-role">{cand.role || 'General Position'}</div>
+                      <div style={{ fontSize: '.65rem', color: 'var(--t3)' }}>
+                        {cand.assessment_status === 'pending' 
+                          ? 'Awaiting candidate completion...' 
+                          : 'Test completed — candidate evaluation saved'
+                        }
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
+                        {cand.github_url && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleScanGithub(cand)}
+                            disabled={scanningId === cand.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              borderColor: '#333',
+                              color: '#333',
+                              fontSize: '0.68rem',
+                              padding: '3px 8px',
+                              fontWeight: 'bold',
+                              background: '#f8fafc',
+                              width: 'fit-content'
+                            }}
+                          >
+                            {scanningId === cand.id ? (
+                              <>
+                                <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(0,0,0,0.1)', borderTopColor: '#333', margin: '0 4px 0 0' }}></div>
+                                Scanning...
+                              </>
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                                </svg>
+                                Scan GitHub
+                              </>
+                            )}
+                          </button>
+                        )}
+                        {cand.assessment_status && cand.assessment_status !== 'pending' && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleWatchVideo(cand.id, cand.name)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              borderColor: 'var(--purple)',
+                              color: 'var(--purple)',
+                              fontSize: '0.68rem',
+                              padding: '3px 8px',
+                              fontWeight: 'bold',
+                              background: '#fcfcfc',
+                              width: 'fit-content'
+                            }}
+                          >
+                            📹 Watch Video
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem', minWidth: '110px' }}>
+                      {cand.assessment_status === 'pending' && (
+                        <span className="status-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting Take</span>
+                      )}
+                      
+                      {cand.assessment_status !== 'pending' && cand.assessment_score >= 60 && cand.assessment_violations < 3 && (
+                        <>
+                          <button 
+                            className="btn btn-sm btn-primary" 
+                            onClick={() => {
+                              setForm(f => ({
+                                ...f,
+                                candidate_id: cand.id.toString(),
+                                interviewer_name: 'Hiring Manager'
+                              }))
+                              setShowModal(true)
+                            }}
+                          >
+                            📅 Schedule
+                          </button>
+                          <div style={{ display: 'flex', gap: '.2rem' }}>
+                            <button className="btn btn-sm btn-success" onClick={() => handleCandidateDecision(cand.id, 'hire')} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Hire</button>
+                            <button className="btn btn-sm btn-danger" onClick={() => handleCandidateDecision(cand.id, 'reject')} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Reject</button>
+                          </div>
+                        </>
+                      )}
+                      
+                      {cand.assessment_status !== 'pending' && (cand.assessment_score < 60 || cand.assessment_violations >= 3) && (
+                        <>
+                          <span className="status-badge status-rejected" style={{ textAlign: 'center', background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5' }}>
+                            {cand.assessment_violations >= 3 ? 'Auto Rejected (Violated)' : 'Auto Rejected (Failed)'}
+                          </span>
+                          <div style={{ display: 'flex', gap: '.25rem', marginTop: '.1rem' }}>
+                            <button className="btn btn-sm btn-success" onClick={() => handleCandidateDecision(cand.id, 'hire')} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Force Hire</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -519,7 +778,9 @@ export default function Interviews() {
               <select className="form-input form-select" value={form.candidate_id} onChange={e => setForm(f => ({ ...f, candidate_id: e.target.value }))}>
                 <option value="">Select candidate...</option>
                 {candidates.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.status})</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.assessment_status ? `(AI Test: ${c.assessment_status === 'passed' ? `Passed - ${c.assessment_score}%` : c.assessment_status === 'failed' ? `Failed - ${c.assessment_score}%` : 'Pending'})` : '(AI Test: Not Invited)'}
+                  </option>
                 ))}
               </select>
             </div>
@@ -663,6 +924,225 @@ export default function Interviews() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {githubReport && (
+        <div className="modal-overlay" onClick={() => setGithubReport(null)}>
+          <div className="modal" style={{ maxWidth: '850px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '2.5rem', background: 'var(--white)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setGithubReport(null)}>×</button>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+              <img 
+                src={githubReport.user_info.avatar_url} 
+                alt={githubReport.user_info.login}
+                style={{ width: '64px', height: '64px', borderRadius: '50%', border: '2px solid var(--blue)' }} 
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--t1)' }}>
+                    {githubReport.user_info.name}
+                  </h2>
+                  <a href={githubReport.user_info.html_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>
+                    @{githubReport.user_info.login} ↗
+                  </a>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--t2)', marginTop: '4px', fontStyle: 'italic' }}>
+                  {githubReport.user_info.bio || "No biography provided."}
+                </div>
+                {githubReport.user_info.company && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--t3)', marginTop: '4px', fontWeight: 600 }}>
+                    🏢 {githubReport.user_info.company}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              
+              {/* Grid 1: Basic Stats Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+                <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Public Repos</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--t1)', marginTop: '0.25rem' }}>{githubReport.user_info.public_repos}</div>
+                </div>
+                <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Stars Received</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.25rem' }}>⭐ {githubReport.stats.total_stars}</div>
+                </div>
+                <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Total Forks</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--blue)', marginTop: '0.25rem' }}>🍴 {githubReport.stats.total_forks}</div>
+                </div>
+                <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Followers</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--purple)', marginTop: '0.25rem' }}>👥 {githubReport.user_info.followers}</div>
+                </div>
+              </div>
+
+              {/* Grid 2: Language & Activity Breakdown */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                
+                {/* Programming Languages */}
+                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1.25rem' }}>
+                  <h3 style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                    💻 Programming Languages
+                  </h3>
+                  {Object.keys(githubReport.stats.languages).length === 0 ? (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--t3)', fontStyle: 'italic' }}>No languages detected.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {Object.entries(githubReport.stats.languages).map(([lang, pct]) => (
+                        <div key={lang}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: 600, color: 'var(--t2)', marginBottom: '0.25rem' }}>
+                            <span>{lang}</span>
+                            <span>{pct}%</span>
+                          </div>
+                          <div style={{ height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #a855f7)', borderRadius: '3px' }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent Activity */}
+                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1.25rem' }}>
+                  <h3 style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                    ⏱️ Recent Contribution Activity
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 600 }}>Commits (Pushes)</span>
+                      <strong style={{ fontSize: '1rem', color: 'var(--t1)' }}>{githubReport.stats.activity.pushes} pushes</strong>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 600 }}>Pull Requests</span>
+                      <strong style={{ fontSize: '1rem', color: 'var(--t1)' }}>{githubReport.stats.activity.pull_requests} PRs</strong>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 600 }}>Issue Events</span>
+                      <strong style={{ fontSize: '1rem', color: 'var(--t1)' }}>{githubReport.stats.activity.issues} issues</strong>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--t3)', fontWeight: 600 }}>Total Analyzed Events</span>
+                      <strong style={{ fontSize: '1rem', color: 'var(--t1)' }}>{githubReport.stats.activity.total_recent_events} events</strong>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* AI Projects Section */}
+              <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1.25rem' }}>
+                <h3 style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                  🤖 Detected AI / Machine Learning Projects
+                </h3>
+                {githubReport.ai_projects.length === 0 ? (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--t3)', fontStyle: 'italic' }}>
+                    No specialized AI/ML repositories detected.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {githubReport.ai_projects.map((repo, idx) => (
+                      <div key={idx} style={{ background: 'var(--white)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ fontSize: '0.85rem', color: 'var(--blue)' }}>{repo.name}</strong>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--t2)', marginTop: '2px' }}>
+                            {repo.description || "No description provided."}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--t3)' }}>
+                          <span>⭐ {repo.stars}</span>
+                          <span style={{ color: 'var(--purple)' }}>{repo.language}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* JD Technologies Match Section */}
+              {githubReport.jd_tech_matches && githubReport.jd_tech_matches.length > 0 && (
+                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1.25rem' }}>
+                  <h3 style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🎯 Job Description Tech Matches
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {githubReport.jd_tech_matches.map((match, idx) => (
+                      <div key={idx} style={{ background: 'var(--white)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '8px' }}>
+                          <span style={{ 
+                            background: 'rgba(99, 102, 241, 0.08)', 
+                            color: 'var(--blue)', 
+                            border: '1px solid rgba(99, 102, 241, 0.15)', 
+                            padding: '2px 8px', 
+                            borderRadius: '6px', 
+                            fontSize: '0.68rem', 
+                            fontWeight: 'bold' 
+                          }}>
+                            {match.technology}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--t3)', fontWeight: 600 }}>
+                            📁 Project: <strong style={{ color: 'var(--t1)' }}>{match.project_name}</strong>
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--t2)', lineHeight: '1.45', marginTop: '6px' }}>
+                          {match.relation}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Summary Section */}
+              <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: '14px', padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--blue)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>✦</span> AI Candidate Developer Profile Summary
+                </h3>
+                <div style={{ 
+                  fontSize: '0.85rem', 
+                  color: 'var(--t2)', 
+                  lineHeight: '1.6', 
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'inherit'
+                }}>
+                  {githubReport.ai_summary}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video Playback Modal */}
+      {showVideoModal && (
+        <div className="modal-overlay" onClick={() => setShowVideoModal(false)}>
+          <div className="modal" style={{ maxWidth: '640px', width: '100%', padding: '2rem', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowVideoModal(false)}>×</button>
+            <div className="modal-title" style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '1.25rem' }}>
+              📹 {videoTitle}
+            </div>
+            <div style={{ width: '100%', borderRadius: '12px', overflow: 'hidden', background: '#000', border: '1px solid var(--border)' }}>
+              <video 
+                src={videoUrl} 
+                controls 
+                autoPlay 
+                style={{ width: '100%', display: 'block' }}
+                onError={(e) => {
+                  console.error("Video load error:", e);
+                  alert("Could not load webcam video. The candidate might not have granted camera permissions, or the video file is not available.");
+                  setShowVideoModal(false);
+                }}
+              />
+            </div>
+            <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline" onClick={() => setShowVideoModal(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}

@@ -13,7 +13,85 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_env_path)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def get_ai_client_and_model():
+    # Reload env
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(_env_path)
+
+    groq_key = os.getenv("GROQ_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+
+    if groq_key and groq_key.strip():
+        client = OpenAI(
+            api_key=groq_key.strip(),
+            base_url="https://api.groq.com/openai/v1"
+        )
+        return client, "llama-3.3-70b-versatile", "groq"
+    elif openai_key and openai_key.strip() and not openai_key.startswith("sk-" + "proj-" + "de5IUiFUBOI8xtN1FpiiDcGPY0c4f9107RXn-W_tP5WWl46BDWOjLWrtcoAK33NO_EU9ywR23IT3BlbkFJhZqFaQabubXCX3VDLyTaSRwADmQtthdt0HJ_BAA1eiFgDOoAnUICsd616P2fWjcoqnzmAcQgIA"):
+        client = OpenAI(
+            api_key=openai_key.strip()
+        )
+        return client, "gpt-4o-mini", "openai"
+    else:
+        client = OpenAI(
+            api_key=gemini_key.strip() if gemini_key else "",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+        return client, "gemini-2.5-flash", "gemini"
+
+import time
+
+def safe_chat_completion(*args, **kwargs):
+    client, model, provider = get_ai_client_and_model()
+    kwargs["model"] = model
+
+    max_retries = 3
+    delay = 1.5
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e).lower()
+            is_transient = any(x in err_str for x in ["429", "503", "overloaded", "rate limit", "unavailable", "resource"])
+            if is_transient and attempt < max_retries - 1:
+                print(f"[{provider} client] Retrying in {delay}s due to error: {e}")
+                time.sleep(delay)
+                delay *= 2
+            else:
+                raise e
+
+
+def clean_json_response(content: str) -> str:
+    content = content.strip()
+    
+    first_brace = content.find('{')
+    first_bracket = content.find('[')
+    
+    if first_brace == -1 and first_bracket == -1:
+        return content
+    elif first_brace == -1:
+        start_idx = first_bracket
+    elif first_bracket == -1:
+        start_idx = first_brace
+    else:
+        start_idx = min(first_brace, first_bracket)
+        
+    last_brace = content.rfind('}')
+    last_bracket = content.rfind(']')
+    
+    if last_brace == -1 and last_bracket == -1:
+        return content
+    elif last_brace == -1:
+        end_idx = last_bracket
+    elif last_bracket == -1:
+        end_idx = last_brace
+    else:
+        end_idx = max(last_brace, last_bracket)
+        
+    if start_idx < end_idx:
+        return content[start_idx:end_idx+1].strip()
+    return content
 
 
 def screen_single_candidate(jd_text: str, resume_text: str, candidate_name: str) -> dict:
@@ -47,18 +125,17 @@ Return ONLY valid JSON, no markdown.
 """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = safe_chat_completion(
+            model="gemini-2.5-flash",
             messages=[
                 {"role": "system", "content": "You are an expert HR recruiter. Return only valid JSON."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=500,
             response_format={"type": "json_object"}
         )
 
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(clean_json_response(response.choices[0].message.content))
 
         # Ensure required fields exist with defaults
         return {
@@ -89,17 +166,16 @@ Return a JSON array with exactly 3 objects, each having:
 {{"time": "human readable time", "reason": "why this slot is good"}}
 Return ONLY valid JSON array, no markdown.
 """
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = safe_chat_completion(
+            model="gemini-2.5-flash",
             messages=[
                 {"role": "system", "content": "You are a scheduling assistant. Return only valid JSON arrays."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=300,
             response_format={"type": "json_object"}
         )
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(clean_json_response(response.choices[0].message.content))
         # Handle both direct array and wrapped object
         if isinstance(result, list):
             return result
@@ -171,17 +247,16 @@ def generate_ai_email(candidate_name: str, role: str, strengths: list, gaps: lis
         """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = safe_chat_completion(
+            model="gemini-2.5-flash",
             messages=[
                 {"role": "system", "content": "You are a professional recruitment assistant. Return only valid JSON."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=600,
             response_format={"type": "json_object"}
         )
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(clean_json_response(response.choices[0].message.content))
         return {
             "subject": result.get("subject", "Interview Invitation: Stitch ATS"),
             "body": result.get("body", f"Dear {candidate_name},\n\nWe would love to invite you to an interview...")
