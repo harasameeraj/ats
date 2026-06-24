@@ -218,22 +218,12 @@ export default function Interviews() {
   }
 
   async function handleScanGithub(cand) {
-    let url = cand.github_url;
-    if (!url) {
-      const entered = prompt(`Please enter the GitHub Profile URL or Username for ${cand.name}:`, "");
-      if (!entered) return;
-      const trimmed = entered.trim();
-      if (trimmed.toLowerCase().includes('github.com/')) {
-        url = trimmed;
-      } else {
-        url = `https://github.com/${trimmed}`;
-      }
-    }
     setScanningId(cand.id)
     try {
-      const report = await api.scanGithub(cand.id, url)
+      const report = await api.scanGithub(cand.id, cand.github_url)
       setGithubReport(report)
-      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_url: url, github_analysis: JSON.stringify(report) } : c))
+      const updatedUrl = cand.github_url || `https://github.com/${cand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_url: c.github_url || updatedUrl, github_analysis: JSON.stringify(report) } : c))
     } catch (e) {
       showToast(e.message || "Failed to scan GitHub profile.", "error")
     } finally {
@@ -242,22 +232,12 @@ export default function Interviews() {
   }
 
   async function handleScanLinkedin(cand) {
-    let url = cand.linkedin_url;
-    if (!url) {
-      const entered = prompt(`Please enter the LinkedIn Profile URL or Username for ${cand.name}:`, "");
-      if (!entered) return;
-      const trimmed = entered.trim();
-      if (trimmed.toLowerCase().includes('linkedin.com/in/')) {
-        url = trimmed;
-      } else {
-        url = `https://linkedin.com/in/${trimmed}`;
-      }
-    }
     setScanningLinkedinId(cand.id)
     try {
-      const report = await api.scanLinkedin(cand.id, url)
+      const report = await api.scanLinkedin(cand.id, cand.linkedin_url)
       setLinkedinReport(report)
-      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_url: url, linkedin_analysis: JSON.stringify(report) } : c))
+      const updatedUrl = cand.linkedin_url || `https://linkedin.com/in/${cand.name.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/\s+/g, '-')}`
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_url: c.linkedin_url || updatedUrl, linkedin_analysis: JSON.stringify(report) } : c))
     } catch (e) {
       showToast(e.message || "Failed to scan LinkedIn profile.", "error")
     } finally {
@@ -710,16 +690,15 @@ export default function Interviews() {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
-                            borderColor: cand.github_url ? '#333' : '#94a3b8',
-                            color: cand.github_url ? '#333' : '#64748b',
+                            borderColor: '#333',
+                            color: '#333',
                             fontSize: '0.68rem',
                             padding: '3px 8px',
                             fontWeight: 'bold',
-                            background: cand.github_url ? '#f8fafc' : '#f1f5f9',
-                            borderStyle: cand.github_url ? 'solid' : 'dashed',
+                            background: '#f8fafc',
                             width: 'fit-content'
                           }}
-                          title={cand.github_url ? "Scan candidate's public GitHub profile" : "GitHub profile not linked. Click to link and scan."}
+                          title="Scan candidate's public GitHub profile"
                         >
                           {scanningId === cand.id ? (
                             <>
@@ -744,16 +723,15 @@ export default function Interviews() {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px',
-                            borderColor: cand.linkedin_url ? '#0a66c2' : '#94a3b8',
-                            color: cand.linkedin_url ? '#0a66c2' : '#64748b',
+                            borderColor: '#0a66c2',
+                            color: '#0a66c2',
                             fontSize: '0.68rem',
                             padding: '3px 8px',
                             fontWeight: 'bold',
-                            background: cand.linkedin_url ? '#f8fafc' : '#f1f5f9',
-                            borderStyle: cand.linkedin_url ? 'solid' : 'dashed',
+                            background: '#f8fafc',
                             width: 'fit-content'
                           }}
-                          title={cand.linkedin_url ? "Scan candidate's LinkedIn profile" : "LinkedIn profile not linked. Click to link and scan."}
+                          title="Scan candidate's LinkedIn profile"
                         >
                           {scanningLinkedinId === cand.id ? (
                             <>

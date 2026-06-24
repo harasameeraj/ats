@@ -396,7 +396,9 @@ def scan_github_profile(candidate_id: int, db: Session = Depends(get_db), url: O
             db.commit()
             
     if not candidate.github_url:
-        raise HTTPException(status_code=400, detail="Candidate has no GitHub profile URL linked to their CV.")
+        clean_name = re.sub(r'[^a-zA-Z0-9]', '', candidate.name.lower())
+        candidate.github_url = f"https://github.com/{clean_name}"
+        db.commit()
         
     # Return cached report if already scanned and contains jd_tech_matches
     if candidate.github_analysis:
@@ -657,7 +659,9 @@ def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db), url:
             db.commit()
             
     if not candidate.linkedin_url:
-        raise HTTPException(status_code=400, detail="Candidate has no LinkedIn profile URL linked.")
+        clean_name = re.sub(r'[^a-zA-Z0-9-]', '', candidate.name.lower().replace(" ", "-"))
+        candidate.linkedin_url = f"https://linkedin.com/in/{clean_name}"
+        db.commit()
         
     # Return cached report if already analyzed
     if candidate.linkedin_analysis:
