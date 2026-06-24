@@ -55,8 +55,8 @@ export const api = {
   generateEmail: (candidateId, emailType, details) => request('/api/interviews/generate-email', { method: 'POST', body: JSON.stringify({ candidate_id: candidateId, email_type: emailType, details }) }),
   sendEmail: (toEmail, subject, body) => request('/api/interviews/send-email', { method: 'POST', body: JSON.stringify({ to_email: toEmail, subject, body }) }),
   candidateAction: (id, action) => request(`/api/interviews/candidate/${id}/action?action=${action}`, { method: 'POST' }),
-  scanGithub: (id) => request(`/api/interviews/candidate/${id}/github-scan`, { method: 'POST' }),
-  scanLinkedin: (id) => request(`/api/interviews/candidate/${id}/linkedin-scan`, { method: 'POST' }),
+  scanGithub: (id, url) => request(`/api/interviews/candidate/${id}/github-scan${url ? `?url=${encodeURIComponent(url)}` : ''}`, { method: 'POST' }),
+  scanLinkedin: (id, url) => request(`/api/interviews/candidate/${id}/linkedin-scan${url ? `?url=${encodeURIComponent(url)}` : ''}`, { method: 'POST' }),
 
   // Onboarding
   getOnboarding: () => request('/api/onboarding/'),

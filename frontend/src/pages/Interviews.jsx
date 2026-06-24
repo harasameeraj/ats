@@ -218,11 +218,22 @@ export default function Interviews() {
   }
 
   async function handleScanGithub(cand) {
+    let url = cand.github_url;
+    if (!url) {
+      const entered = prompt(`Please enter the GitHub Profile URL or Username for ${cand.name}:`, "");
+      if (!entered) return;
+      const trimmed = entered.trim();
+      if (trimmed.toLowerCase().includes('github.com/')) {
+        url = trimmed;
+      } else {
+        url = `https://github.com/${trimmed}`;
+      }
+    }
     setScanningId(cand.id)
     try {
-      const report = await api.scanGithub(cand.id)
+      const report = await api.scanGithub(cand.id, url)
       setGithubReport(report)
-      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_analysis: JSON.stringify(report) } : c))
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_url: url, github_analysis: JSON.stringify(report) } : c))
     } catch (e) {
       showToast(e.message || "Failed to scan GitHub profile.", "error")
     } finally {
@@ -231,11 +242,22 @@ export default function Interviews() {
   }
 
   async function handleScanLinkedin(cand) {
+    let url = cand.linkedin_url;
+    if (!url) {
+      const entered = prompt(`Please enter the LinkedIn Profile URL or Username for ${cand.name}:`, "");
+      if (!entered) return;
+      const trimmed = entered.trim();
+      if (trimmed.toLowerCase().includes('linkedin.com/in/')) {
+        url = trimmed;
+      } else {
+        url = `https://linkedin.com/in/${trimmed}`;
+      }
+    }
     setScanningLinkedinId(cand.id)
     try {
-      const report = await api.scanLinkedin(cand.id)
+      const report = await api.scanLinkedin(cand.id, url)
       setLinkedinReport(report)
-      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_analysis: JSON.stringify(report) } : c))
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_url: url, linkedin_analysis: JSON.stringify(report) } : c))
     } catch (e) {
       showToast(e.message || "Failed to scan LinkedIn profile.", "error")
     } finally {
@@ -680,72 +702,74 @@ export default function Interviews() {
                         }
                       </div>
                       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
-                        {cand.github_url && (
-                          <button
-                            className="btn btn-sm btn-outline"
-                            onClick={() => handleScanGithub(cand)}
-                            disabled={scanningId === cand.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              borderColor: '#333',
-                              color: '#333',
-                              fontSize: '0.68rem',
-                              padding: '3px 8px',
-                              fontWeight: 'bold',
-                              background: '#f8fafc',
-                              width: 'fit-content'
-                            }}
-                          >
-                            {scanningId === cand.id ? (
-                              <>
-                                <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(0,0,0,0.1)', borderTopColor: '#333', margin: '0 4px 0 0' }}></div>
-                                Scanning...
-                              </>
-                            ) : (
-                              <>
-                                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
-                                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-                                </svg>
-                                Scan GitHub
-                              </>
-                            )}
-                          </button>
-                        )}
-                        {cand.linkedin_url && (
-                          <button
-                            className="btn btn-sm btn-outline"
-                            onClick={() => handleScanLinkedin(cand)}
-                            disabled={scanningLinkedinId === cand.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              borderColor: '#0a66c2',
-                              color: '#0a66c2',
-                              fontSize: '0.68rem',
-                              padding: '3px 8px',
-                              fontWeight: 'bold',
-                              background: '#f8fafc',
-                              width: 'fit-content'
-                            }}
-                          >
-                            {scanningLinkedinId === cand.id ? (
-                              <>
-                                <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(10,102,194,0.1)', borderTopColor: '#0a66c2', margin: '0 4px 0 0' }}></div>
-                                Scanning...
-                              </>
-                            ) : (
-                              <>
-                                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
-                                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764.784 1.764 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                                </svg>
-                                Scan LinkedIn
-                              </>
-                            )}
-                          </button>
-                        )}
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={() => handleScanGithub(cand)}
+                          disabled={scanningId === cand.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            borderColor: cand.github_url ? '#333' : '#94a3b8',
+                            color: cand.github_url ? '#333' : '#64748b',
+                            fontSize: '0.68rem',
+                            padding: '3px 8px',
+                            fontWeight: 'bold',
+                            background: cand.github_url ? '#f8fafc' : '#f1f5f9',
+                            borderStyle: cand.github_url ? 'solid' : 'dashed',
+                            width: 'fit-content'
+                          }}
+                          title={cand.github_url ? "Scan candidate's public GitHub profile" : "GitHub profile not linked. Click to link and scan."}
+                        >
+                          {scanningId === cand.id ? (
+                            <>
+                              <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(0,0,0,0.1)', borderTopColor: '#333', margin: '0 4px 0 0' }}></div>
+                              Scanning...
+                            </>
+                          ) : (
+                            <>
+                              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                              </svg>
+                              Scan GitHub
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={() => handleScanLinkedin(cand)}
+                          disabled={scanningLinkedinId === cand.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            borderColor: cand.linkedin_url ? '#0a66c2' : '#94a3b8',
+                            color: cand.linkedin_url ? '#0a66c2' : '#64748b',
+                            fontSize: '0.68rem',
+                            padding: '3px 8px',
+                            fontWeight: 'bold',
+                            background: cand.linkedin_url ? '#f8fafc' : '#f1f5f9',
+                            borderStyle: cand.linkedin_url ? 'solid' : 'dashed',
+                            width: 'fit-content'
+                          }}
+                          title={cand.linkedin_url ? "Scan candidate's LinkedIn profile" : "LinkedIn profile not linked. Click to link and scan."}
+                        >
+                          {scanningLinkedinId === cand.id ? (
+                            <>
+                              <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(10,102,194,0.1)', borderTopColor: '#0a66c2', margin: '0 4px 0 0' }}></div>
+                              Scanning...
+                            </>
+                          ) : (
+                            <>
+                              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                                <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764.784 1.764 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                              </svg>
+                              Scan LinkedIn
+                            </>
+                          )}
+                        </button>
+
                         {cand.assessment_status && cand.assessment_status !== 'pending' && (
                           <button
                             className="btn btn-sm btn-outline"

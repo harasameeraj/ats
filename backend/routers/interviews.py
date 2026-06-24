@@ -378,7 +378,7 @@ def candidate_action(candidate_id: int, action: str, db: Session = Depends(get_d
 
 
 @router.post("/candidate/{candidate_id}/github-scan")
-def scan_github_profile(candidate_id: int, db: Session = Depends(get_db)):
+def scan_github_profile(candidate_id: int, db: Session = Depends(get_db), url: Optional[str] = None):
     """Fetch profile data from GitHub public API, run analytics, compile AI Summary, cross-reference JD tech stack, and cache result."""
     import re
     import json
@@ -389,6 +389,12 @@ def scan_github_profile(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
         
+    if url:
+        if candidate.github_url != url:
+            candidate.github_url = url
+            candidate.github_analysis = None
+            db.commit()
+            
     if not candidate.github_url:
         raise HTTPException(status_code=400, detail="Candidate has no GitHub profile URL linked to their CV.")
         
@@ -635,7 +641,7 @@ Return ONLY valid JSON.
 
 
 @router.post("/candidate/{candidate_id}/linkedin-scan")
-def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db)):
+def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db), url: Optional[str] = None):
     """Analyze candidate resume/profile to generate simulated, high-fidelity LinkedIn profile data and run AI tenure/suitability matching."""
     import re
     import json
@@ -644,6 +650,12 @@ def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
         
+    if url:
+        if candidate.linkedin_url != url:
+            candidate.linkedin_url = url
+            candidate.linkedin_analysis = None
+            db.commit()
+            
     if not candidate.linkedin_url:
         raise HTTPException(status_code=400, detail="Candidate has no LinkedIn profile URL linked.")
         
