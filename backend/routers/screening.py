@@ -12,7 +12,7 @@ from typing import List
 from ..database import get_db
 from ..models import Job, Candidate, Screening, Activity
 from ..schemas import ScreeningResult, JobResponse, CandidateResponse, SourcingRequest, ImportSourcedRequest
-from ..services.file_parser import extract_text, extract_candidate_name, extract_email, extract_phone, extract_github_url
+from ..services.file_parser import extract_text, extract_candidate_name, extract_email, extract_phone, extract_github_url, extract_linkedin_url
 from ..services.ai_screening import screen_single_candidate
 
 router = APIRouter(prefix="/api/screening", tags=["Screening"])
@@ -103,12 +103,14 @@ async def upload_cvs(
         email = extract_email(text)
         phone = extract_phone(text)
         github_url = extract_github_url(text)
+        linkedin_url = extract_linkedin_url(text)
 
         candidate = Candidate(
             name=name,
             email=email,
             phone=phone,
             github_url=github_url,
+            linkedin_url=linkedin_url,
             resume_text=text,
             resume_filename=file.filename,
             status="uploaded"
@@ -216,6 +218,8 @@ async def run_screening(
             "assessment_violations": candidate.assessment_violations,
             "github_url": candidate.github_url,
             "github_analysis": candidate.github_analysis,
+            "linkedin_url": candidate.linkedin_url,
+            "linkedin_analysis": candidate.linkedin_analysis,
             "resume_text": candidate.resume_text
         })
 
@@ -279,6 +283,8 @@ def get_results(job_id: int, db: Session = Depends(get_db)):
             "assessment_violations": candidate.assessment_violations if candidate else 0,
             "github_url": candidate.github_url if candidate else None,
             "github_analysis": candidate.github_analysis if candidate else None,
+            "linkedin_url": candidate.linkedin_url if candidate else None,
+            "linkedin_analysis": candidate.linkedin_analysis if candidate else None,
             "created_at": s.created_at.isoformat(),
             "resume_text": candidate.resume_text if candidate else ""
         })
@@ -412,6 +418,7 @@ def search_github_candidates(skills: list, location: str) -> list:
                             "name": user_data.get("name") or user_data.get("login"),
                             "github_username": user_data.get("login"),
                             "github_url": user_data.get("html_url"),
+                            "linkedin_url": f"https://linkedin.com/in/{user_data.get('login')}",
                             "location": user_data.get("location") or location,
                             "bio": user_data.get("bio") or f"Active developer specializing in {', '.join(skills)}.",
                             "avatar_url": user_data.get("avatar_url"),
@@ -438,6 +445,7 @@ def generate_fallback_candidates(skills: list, location: str, jd_title: str) -> 
     - name: A realistic full name.
     - github_username: A matching lowercase username.
     - github_url: A realistic github URL, e.g. "https://github.com/username".
+    - linkedin_url: A realistic linkedin URL, e.g. "https://linkedin.com/in/username".
     - location: '{location}' (or surrounding areas/details).
     - bio: A short, professional bio (1-2 sentences) detailing their tech stack and experience.
     - email: A realistic email address.
@@ -471,6 +479,7 @@ def generate_fallback_candidates(skills: list, location: str, jd_title: str) -> 
             "name": name,
             "github_username": username,
             "github_url": f"https://github.com/{username}",
+            "linkedin_url": f"https://linkedin.com/in/{username}",
             "location": location,
             "bio": f"Senior Software Engineer specializing in {', '.join(skills)} with a passion for building scalable applications.",
             "email": f"{username}@example.com",
@@ -589,6 +598,7 @@ def import_sourced_candidate(req: ImportSourcedRequest, db: Session = Depends(ge
             name=req.name,
             email=req.email,
             github_url=req.github_url,
+            linkedin_url=req.linkedin_url,
             resume_text=f"Sourced Profile Bio:\n{req.bio}\n\nKey Skills: {', '.join(req.skills)}",
             resume_filename=f"sourced_{req.name.lower().replace(' ', '_')}.txt",
             status="screened",
@@ -648,5 +658,7 @@ def import_sourced_candidate(req: ImportSourcedRequest, db: Session = Depends(ge
         "assessment_token": candidate.assessment_token,
         "assessment_violations": candidate.assessment_violations,
         "github_url": candidate.github_url,
+        "linkedin_url": candidate.linkedin_url,
+        "linkedin_analysis": candidate.linkedin_analysis,
         "resume_text": candidate.resume_text
     }

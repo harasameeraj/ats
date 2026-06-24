@@ -346,7 +346,7 @@ export default function Onboarding() {
               <span className="status-badge status-confirmed" style={{ fontSize: '.55rem', padding: '.1rem .4rem', background: '#38bdf822', color: '#38bdf8' }}>Active</span>
             </div>
             <p style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.6)', lineHeight: 1.5, marginBottom: '.9rem' }}>
-              Automatically provisions Slack channels, GitHub repository access, and generates hardware equipment purchase orders for new hires.
+              Automatically provisions Slack channels, GitHub & LinkedIn Learning access, and generates hardware equipment purchase orders for new hires.
             </p>
             <button className="btn btn-primary btn-sm" onClick={handleRunBot} disabled={onboarders.length === 0} style={{ width: '100%' }}>
               Run Provisioning Script →

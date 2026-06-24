@@ -42,6 +42,8 @@ class Candidate(Base):
     assessment_violations = Column(Integer, default=0, nullable=True)
     github_url = Column(String, nullable=True)
     github_analysis = Column(Text, nullable=True)
+    linkedin_url = Column(String, nullable=True)
+    linkedin_analysis = Column(Text, nullable=True)
     assessment_questions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

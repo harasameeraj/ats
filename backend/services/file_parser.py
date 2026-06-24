@@ -87,3 +87,13 @@ def extract_github_url(text: str) -> str | None:
         username = match.group(3)
         return f"https://github.com/{username}"
     return None
+
+
+def extract_linkedin_url(text: str) -> str | None:
+    """Try to extract a LinkedIn profile URL from resume text."""
+    # Pattern to match linkedin.com/in/username
+    match = re.search(r"(https?://)?(www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)", text, re.IGNORECASE)
+    if match:
+        username = match.group(3)
+        return f"https://linkedin.com/in/{username}"
+    return None

@@ -11,6 +11,8 @@ export default function Interviews() {
   const [toast, setToast] = useState(null)
   const [githubReport, setGithubReport] = useState(null)
   const [scanningId, setScanningId] = useState(null)
+  const [linkedinReport, setLinkedinReport] = useState(null)
+  const [scanningLinkedinId, setScanningLinkedinId] = useState(null)
 
   // Video Playback Modal States
   const [showVideoModal, setShowVideoModal] = useState(false)
@@ -225,6 +227,19 @@ export default function Interviews() {
       showToast(e.message || "Failed to scan GitHub profile.", "error")
     } finally {
       setScanningId(null)
+    }
+  }
+
+  async function handleScanLinkedin(cand) {
+    setScanningLinkedinId(cand.id)
+    try {
+      const report = await api.scanLinkedin(cand.id)
+      setLinkedinReport(report)
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_analysis: JSON.stringify(report) } : c))
+    } catch (e) {
+      showToast(e.message || "Failed to scan LinkedIn profile.", "error")
+    } finally {
+      setScanningLinkedinId(null)
     }
   }
 
@@ -698,6 +713,39 @@ export default function Interviews() {
                             )}
                           </button>
                         )}
+                        {cand.linkedin_url && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleScanLinkedin(cand)}
+                            disabled={scanningLinkedinId === cand.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              borderColor: '#0a66c2',
+                              color: '#0a66c2',
+                              fontSize: '0.68rem',
+                              padding: '3px 8px',
+                              fontWeight: 'bold',
+                              background: '#f8fafc',
+                              width: 'fit-content'
+                            }}
+                          >
+                            {scanningLinkedinId === cand.id ? (
+                              <>
+                                <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(10,102,194,0.1)', borderTopColor: '#0a66c2', margin: '0 4px 0 0' }}></div>
+                                Scanning...
+                              </>
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764.784 1.764 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                                </svg>
+                                Scan LinkedIn
+                              </>
+                            )}
+                          </button>
+                        )}
                         {cand.assessment_status && cand.assessment_status !== 'pending' && (
                           <button
                             className="btn btn-sm btn-outline"
@@ -1142,6 +1190,160 @@ export default function Interviews() {
             </div>
             <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowVideoModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LinkedIn Profile Analysis Modal */}
+      {linkedinReport && (
+        <div className="modal-overlay" onClick={() => setLinkedinReport(null)}>
+          <div className="modal" style={{ maxWidth: '850px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '2.5rem', background: 'var(--white)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setLinkedinReport(null)}>×</button>
+            
+            {/* Header: User Info */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+              <img 
+                src={linkedinReport.user_info.avatar_url} 
+                alt={linkedinReport.user_info.name}
+                style={{ width: '64px', height: '64px', borderRadius: '50%', border: '2px solid #0a66c2' }} 
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--t1)' }}>
+                    {linkedinReport.user_info.name}
+                  </h2>
+                  <a href={linkedinReport.user_info.html_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: '#0a66c2', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    LinkedIn Profile ↗
+                  </a>
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--t1)', fontWeight: 700, marginTop: '2px' }}>
+                  {linkedinReport.user_info.headline}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--t2)', marginTop: '4px', fontStyle: 'italic' }}>
+                  {linkedinReport.user_info.summary || "No personal summary provided."}
+                </div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '0.78rem', color: 'var(--t3)', marginTop: '6px', fontWeight: 600 }}>
+                  <span>📍 {linkedinReport.user_info.location}</span>
+                  <span>•</span>
+                  <span>🏢 {linkedinReport.user_info.current_company}</span>
+                  <span>•</span>
+                  <span style={{ color: '#0a66c2' }}>👥 {linkedinReport.user_info.connections} connections</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable Body Container */}
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              
+              {/* AI Recruitment tenure Suitability Analysis */}
+              <div style={{ background: 'linear-gradient(135deg, rgba(10,102,194,0.03), rgba(99,102,241,0.03))', border: '1px solid rgba(10,102,194,0.15)', borderRadius: '12px', padding: '1.25rem' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0a66c2', margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🤖</span> AI Recruiter Tenure & Suitability Assessment
+                </h3>
+                <div style={{ fontSize: '0.82rem', color: 'var(--t2)', lineHeight: '1.6', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                  {linkedinReport.ai_summary}
+                </div>
+              </div>
+
+              {/* JD Match Requirements */}
+              {linkedinReport.jd_matches && linkedinReport.jd_matches.length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.85rem' }}>
+                    💼 Cross-Reference JD Requirements
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.75rem' }}>
+                    {linkedinReport.jd_matches.map((match, idx) => (
+                      <div 
+                        key={idx} 
+                        style={{ 
+                          border: '1px solid var(--border)', 
+                          borderRadius: '10px', 
+                          padding: '1rem', 
+                          background: 'var(--bg)', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '6px' 
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                          <strong style={{ fontSize: '0.82rem', color: 'var(--t1)' }}>
+                            {match.requirement}
+                          </strong>
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            fontWeight: 'bold', 
+                            padding: '2px 8px', 
+                            borderRadius: '6px', 
+                            background: match.rating.toLowerCase().includes('strong') ? '#e6fbf3' : match.rating.toLowerCase().includes('partial') ? '#fffbeb' : '#fef2f2',
+                            color: match.rating.toLowerCase().includes('strong') ? '#10b981' : match.rating.toLowerCase().includes('partial') ? '#d97706' : '#ef4444',
+                            border: match.rating.toLowerCase().includes('strong') ? '1px solid #a7f3d0' : match.rating.toLowerCase().includes('partial') ? '1px solid #fde68a' : '1px solid #fca5a5'
+                          }}>
+                            {match.rating}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--t2)' }}>
+                          <strong>Matched Role:</strong> {match.matches_role}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--t2)', lineHeight: '1.5' }}>
+                          {match.reasoning}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Work Experience */}
+              <div>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.85rem' }}>
+                  🏢 Work Experience
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {linkedinReport.experience.map((exp, idx) => (
+                    <div key={idx} style={{ paddingLeft: '1.25rem', borderLeft: '2px solid #0a66c2', position: 'relative' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0a66c2', position: 'absolute', left: '-5px', top: '5px' }}></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                        <strong style={{ fontSize: '0.85rem', color: 'var(--t1)' }}>{exp.title}</strong>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--t3)', fontWeight: 600 }}>{exp.duration}</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#0a66c2', fontWeight: 600 }}>
+                        {exp.company}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--t2)', marginTop: '4px', lineHeight: '1.5' }}>
+                        {exp.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Education */}
+              {linkedinReport.education && linkedinReport.education.length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.85rem' }}>
+                    🎓 Education
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {linkedinReport.education.map((edu, idx) => (
+                      <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '0.85rem', background: 'var(--bg)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                          <strong style={{ fontSize: '0.82rem', color: 'var(--t1)' }}>{edu.school}</strong>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--t3)', fontWeight: 600 }}>{edu.duration}</span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--t2)', marginTop: '2px' }}>
+                          {edu.degree} in {edu.field_of_study}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+            
+            <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline" onClick={() => setLinkedinReport(null)}>Close Analysis</button>
             </div>
           </div>
         </div>

@@ -93,6 +93,7 @@ export default function Screening() {
         name: cand.name,
         email: cand.email,
         github_url: cand.github_url,
+        linkedin_url: cand.linkedin_url,
         bio: cand.bio,
         match_score: cand.match_score,
         match_reason: cand.match_reason,
@@ -134,6 +135,7 @@ export default function Screening() {
           name: cand.name,
           email: cand.email,
           github_url: cand.github_url,
+          linkedin_url: cand.linkedin_url,
           bio: cand.bio,
           match_score: cand.match_score,
           match_reason: cand.match_reason,
@@ -690,7 +692,7 @@ export default function Screening() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                               <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>{cand.name}</h4>
                               <span style={{ fontSize: '0.65rem', background: 'var(--blue-bg)', color: 'var(--blue)', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
-                                GitHub Profile
+                                Sourced Profile
                               </span>
                               <span style={{ fontSize: '0.65rem', background: '#e6fbf3', color: '#10b981', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
                                 Match: {cand.match_score}%
@@ -707,16 +709,27 @@ export default function Screening() {
                             </p>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                           {cand.github_url && (
                             <a 
                               href={cand.github_url} 
                               target="_blank" 
                               rel="noreferrer" 
                               className="btn btn-sm btn-outline"
-                              style={{ fontSize: '0.65rem', padding: '4px 8px' }}
+                              style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                             >
-                              🔗 View Profile
+                              🐙 GitHub
+                            </a>
+                          )}
+                          {cand.linkedin_url && (
+                            <a 
+                              href={cand.linkedin_url} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="btn btn-sm btn-outline"
+                              style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px', borderColor: '#0a66c2', color: '#0a66c2' }}
+                            >
+                              💼 LinkedIn
                             </a>
                           )}
                           <button 
@@ -908,7 +921,7 @@ export default function Screening() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                 <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>{cand.name}</h4>
                                 <span style={{ fontSize: '0.65rem', background: 'var(--blue-bg)', color: 'var(--blue)', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
-                                  GitHub Profile
+                                  Sourced Profile
                                 </span>
                                 <span style={{ fontSize: '0.65rem', background: '#e6fbf3', color: '#10b981', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
                                   Match: {cand.match_score}%
@@ -925,16 +938,27 @@ export default function Screening() {
                               </p>
                             </div>
                           </div>
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                             {cand.github_url && (
                               <a 
                                 href={cand.github_url} 
                                 target="_blank" 
                                 rel="noreferrer" 
                                 className="btn btn-sm btn-outline"
-                                style={{ fontSize: '0.65rem', padding: '4px 8px' }}
+                                style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                               >
-                                🔗 View Profile
+                                🐙 GitHub
+                              </a>
+                            )}
+                            {cand.linkedin_url && (
+                              <a 
+                                href={cand.linkedin_url} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="btn btn-sm btn-outline"
+                                style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px', borderColor: '#0a66c2', color: '#0a66c2' }}
+                              >
+                                💼 LinkedIn
                               </a>
                             )}
                             <button 

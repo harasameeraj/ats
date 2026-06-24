@@ -44,6 +44,8 @@ class CandidateResponse(BaseModel):
     assessment_violations: Optional[int] = 0
     github_url: Optional[str] = None
     github_analysis: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    linkedin_analysis: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -199,6 +201,7 @@ class ImportSourcedRequest(BaseModel):
     name: str
     email: str
     github_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
     bio: str
     match_score: float
     match_reason: str

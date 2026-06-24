@@ -56,6 +56,7 @@ export const api = {
   sendEmail: (toEmail, subject, body) => request('/api/interviews/send-email', { method: 'POST', body: JSON.stringify({ to_email: toEmail, subject, body }) }),
   candidateAction: (id, action) => request(`/api/interviews/candidate/${id}/action?action=${action}`, { method: 'POST' }),
   scanGithub: (id) => request(`/api/interviews/candidate/${id}/github-scan`, { method: 'POST' }),
+  scanLinkedin: (id) => request(`/api/interviews/candidate/${id}/linkedin-scan`, { method: 'POST' }),
 
   // Onboarding
   getOnboarding: () => request('/api/onboarding/'),

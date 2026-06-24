@@ -21,6 +21,7 @@ DEFAULT_TASKS = [
     {"category": "access", "task_name": "Slack Workspace"},
     {"category": "access", "task_name": "Jira & Confluence"},
     {"category": "access", "task_name": "GitHub Organization"},
+    {"category": "access", "task_name": "LinkedIn Learning Access"},
     {"category": "documentation", "task_name": "Signed Offer Letter"},
     {"category": "documentation", "task_name": "I-9 Verification Documents"},
     {"category": "documentation", "task_name": "NDA & IP Agreement"},

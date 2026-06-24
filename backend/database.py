@@ -55,7 +55,9 @@ def init_db():
                 "assessment_violations": "INTEGER",
                 "github_url": "VARCHAR",
                 "github_analysis": "TEXT",
-                "assessment_questions": "TEXT"
+                "assessment_questions": "TEXT",
+                "linkedin_url": "VARCHAR",
+                "linkedin_analysis": "TEXT"
             }
             altered = False
             for col_name, col_type in candidate_cols.items():
