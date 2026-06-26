@@ -256,27 +256,7 @@ function AppContent() {
           </button>
         </div>
 
-        {/* New Requisition Button */}
-        <div className="sidebar-req-container" style={{ padding: sidebarOpen ? '12px 16px 4px 16px' : '12px 10px 4px 10px' }}>
-          <button 
-            className="btn btn-primary sidebar-req-btn" 
-            onClick={() => showToast('New Requisition panel is not available in the demo.')}
-            style={{
-              width: '100%',
-              justifyContent: 'center',
-              padding: sidebarOpen ? '8px 12px' : '8px 0',
-              fontSize: '0.8rem',
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: sidebarOpen ? '6px' : '0',
-            }}
-            title="New Requisition"
-          >
-            <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>+</span>
-            {sidebarOpen && <span>New Requisition</span>}
-          </button>
-        </div>
+
 
         <nav className="sidebar-nav">
           <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
