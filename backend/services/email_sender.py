@@ -117,12 +117,17 @@ def send_email(to_email: str, subject: str, body: str, reply_to: str = None, db:
 
         # Connect to SMTP and send
         context = ssl.create_default_context()
-        with smtplib.SMTP(settings["host"], settings["port"]) as server:
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
-            server.login(settings["user"], settings["password"])
-            server.sendmail(settings["user"], to_email, msg.as_string())
+        if settings["port"] == 465:
+            with smtplib.SMTP_SSL(settings["host"], settings["port"], context=context) as server:
+                server.login(settings["user"], settings["password"])
+                server.sendmail(settings["user"], to_email, msg.as_string())
+        else:
+            with smtplib.SMTP(settings["host"], settings["port"]) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(settings["user"], settings["password"])
+                server.sendmail(settings["user"], to_email, msg.as_string())
 
         return {
             "success": True,

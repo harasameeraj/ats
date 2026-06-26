@@ -17,6 +17,8 @@ class Job(Base):
     description = Column(Text, nullable=False)
     jd_filename = Column(String, nullable=True)
     screening_questions = Column(Text, nullable=True)  # JSON list of questions
+    role_id = Column(String, nullable=True)
+    priority = Column(String, default="NORMAL", nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     screenings = relationship("Screening", back_populates="job", cascade="all, delete-orphan")
@@ -45,6 +47,14 @@ class Candidate(Base):
     linkedin_url = Column(String, nullable=True)
     linkedin_analysis = Column(Text, nullable=True)
     assessment_questions = Column(Text, nullable=True)
+    
+    # New Quality Gate fields
+    tech_fit = Column(String, nullable=True)
+    client_readiness = Column(String, nullable=True)
+    red_flags = Column(Text, nullable=True)
+    delivery_verdict = Column(String, default="NOT STARTED", nullable=True)
+    client_feedback = Column(String, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
     screenings = relationship("Screening", back_populates="candidate", cascade="all, delete-orphan")
@@ -80,6 +90,13 @@ class Interview(Base):
     duration_mins = Column(Integer, default=45)
     status = Column(String, default="pending")  # pending, confirmed, completed, cancelled
     notes = Column(Text, nullable=True)
+    
+    # New technical panel fields
+    panel_type = Column(String, nullable=True)
+    brief_shared = Column(String, default="No", nullable=True)
+    verdict = Column(String, default="PENDING", nullable=True)
+    verdict_notes = Column(Text, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
     candidate = relationship("Candidate", back_populates="interviews")
@@ -114,4 +131,30 @@ class SystemSetting(Base):
 
     key = Column(String, primary_key=True, index=True)
     value = Column(String, nullable=True)
+
+
+class SpendLog(Base):
+    __tablename__ = "spend_logs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    role_id = Column(String, nullable=False)
+    role = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    approval_level = Column(String, nullable=False)  # Standard, Elevated, Significant
+    approver = Column(String, nullable=False)
+    status = Column(String, default="PENDING")  # APPROVED, SELF-APPROVED, PENDING
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TAActivityLog(Base):
+    __tablename__ = "ta_activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    date = Column(String, nullable=False)  # e.g. "Mon 2 Jun"
+    activity = Column(String, nullable=False)  # e.g. "New candidates sourced"
+    role_ids = Column(String, nullable=True)  # e.g. "DR-042, DR-043"
+    detail = Column(Text, nullable=False)
+    outcome = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 

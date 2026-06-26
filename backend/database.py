@@ -38,8 +38,17 @@ def init_db():
             # Check jobs table columns
             res = conn.execute(text("PRAGMA table_info(jobs)"))
             columns = [row[1] for row in res.fetchall()]
-            if "screening_questions" not in columns:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN screening_questions TEXT"))
+            job_cols = {
+                "screening_questions": "TEXT",
+                "role_id": "VARCHAR",
+                "priority": "VARCHAR"
+            }
+            altered_jobs = False
+            for col_name, col_type in job_cols.items():
+                if col_name not in columns:
+                    conn.execute(text(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_type}"))
+                    altered_jobs = True
+            if altered_jobs:
                 conn.commit()
 
             # Check candidates table columns
@@ -57,7 +66,12 @@ def init_db():
                 "github_analysis": "TEXT",
                 "assessment_questions": "TEXT",
                 "linkedin_url": "VARCHAR",
-                "linkedin_analysis": "TEXT"
+                "linkedin_analysis": "TEXT",
+                "tech_fit": "VARCHAR",
+                "client_readiness": "VARCHAR",
+                "red_flags": "TEXT",
+                "delivery_verdict": "VARCHAR",
+                "client_feedback": "VARCHAR"
             }
             altered = False
             for col_name, col_type in candidate_cols.items():
@@ -66,6 +80,34 @@ def init_db():
                     altered = True
             if altered:
                 conn.commit()
+
+            # Check interviews table columns
+            res = conn.execute(text("PRAGMA table_info(interviews)"))
+            columns = [row[1] for row in res.fetchall()]
+            interview_cols = {
+                "panel_type": "VARCHAR",
+                "brief_shared": "VARCHAR",
+                "verdict": "VARCHAR",
+                "verdict_notes": "TEXT"
+            }
+            altered_interviews = False
+            for col_name, col_type in interview_cols.items():
+                if col_name not in columns:
+                    conn.execute(text(f"ALTER TABLE interviews ADD COLUMN {col_name} {col_type}"))
+                    altered_interviews = True
+            if altered_interviews:
+                conn.commit()
     except Exception as e:
         print(f"[DATABASE MIGRATION ERROR] Failed to apply column updates: {e}")
+
+    # Seed initial data for dashboards (disabled)
+    seed_dashboard_data()
+
+
+def seed_dashboard_data():
+    """Seed the database with presentation slide data if empty (Disabled)."""
+    pass
+
+
+
 

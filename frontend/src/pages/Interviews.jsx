@@ -210,7 +210,7 @@ export default function Interviews() {
   async function handleCandidateDecision(candidateId, action) {
     try {
       await api.candidateAction(candidateId, action)
-      showToast(`Candidate marked as ${action === 'hire' ? 'Hired' : 'Rejected'}!`)
+      showToast(action === 'hire' ? 'Candidate progressed to next step (Shortlisted)!' : 'Candidate marked as Rejected!')
       loadData()
     } catch (e) {
       showToast(e.message, 'error')
@@ -356,8 +356,7 @@ export default function Interviews() {
   // Filter interviews shown in the panel and inside cell dots (hide already decided hires/rejections)
   const activeInterviews = interviews.filter(iv => 
     iv.status !== 'cancelled' && 
-    iv.candidate_status !== 'hired' && 
-    iv.candidate_status !== 'rejected'
+    !['hired', 'offered', 'onboarded', 'completed', 'rejected'].includes(iv.candidate_status)
   )
 
   const testCandidates = allCandidates.filter(c => {
@@ -775,7 +774,7 @@ export default function Interviews() {
                         <span className="status-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting Take</span>
                       )}
                       
-                      {cand.assessment_status !== 'pending' && cand.assessment_score >= 60 && cand.assessment_violations < 3 && (
+                      {cand.status === 'shortlisted' && (
                         <>
                           <button 
                             className="btn btn-sm btn-primary" 
@@ -790,14 +789,13 @@ export default function Interviews() {
                           >
                             📅 Schedule
                           </button>
-                          <div style={{ display: 'flex', gap: '.2rem' }}>
-                            <button className="btn btn-sm btn-success" onClick={() => handleCandidateDecision(cand.id, 'hire')} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Hire</button>
+                          <div style={{ display: 'flex', gap: '.2rem', marginTop: '.1rem' }}>
                             <button className="btn btn-sm btn-danger" onClick={() => handleCandidateDecision(cand.id, 'reject')} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Reject</button>
                           </div>
                         </>
                       )}
                       
-                      {cand.assessment_status !== 'pending' && (cand.assessment_score < 60 || cand.assessment_violations >= 3) && (
+                      {cand.status === 'rejected' && cand.assessment_status !== 'pending' && (
                         <>
                           <span className="status-badge status-rejected" style={{ textAlign: 'center', background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5' }}>
                             {cand.assessment_violations >= 3 ? 'Auto Rejected (Violated)' : 'Auto Rejected (Failed)'}

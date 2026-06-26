@@ -198,8 +198,18 @@ function Topbar() {
 
 function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [activeRole, setActiveRole] = useState(localStorage.getItem('activeRole') || 'Recruiting')
   const location = useLocation()
+  const navigate = useNavigate()
   const isAssessmentPage = location.pathname.startsWith('/assessment/')
+
+  function handleRoleChange(newRole) {
+    setActiveRole(newRole)
+    localStorage.setItem('activeRole', newRole)
+    // Dispatch a custom event to notify components that the role changed
+    window.dispatchEvent(new Event('roleChanged'))
+    navigate('/dashboard')
+  }
 
   if (isAssessmentPage) {
     return (
@@ -230,33 +240,78 @@ function AppContent() {
         <nav className="sidebar-nav">
           <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <span className="nav-icon">📊</span>
-            {sidebarOpen && <span>Dashboard</span>}
+            {sidebarOpen && (
+              <span>
+                {activeRole === 'Recruiting' 
+                  ? 'Recruitment Board' 
+                  : activeRole === 'Operational head' 
+                    ? 'Delivery Board' 
+                    : 'My Interviews'}
+              </span>
+            )}
           </NavLink>
-          <NavLink to="/screening" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">🤖</span>
-            {sidebarOpen && <span>AI Screening</span>}
-          </NavLink>
-          <NavLink to="/interviews" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">📅</span>
-            {sidebarOpen && <span>Interviews</span>}
-          </NavLink>
-          <NavLink to="/onboarding" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">✅</span>
-            {sidebarOpen && <span>Onboarding</span>}
-          </NavLink>
-          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">⚙️</span>
-            {sidebarOpen && <span>Settings</span>}
-          </NavLink>
+          
+          {activeRole === 'Recruiting' && (
+            <>
+              <NavLink to="/screening" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">🤖</span>
+                {sidebarOpen && <span>1st Round: AI Screening</span>}
+              </NavLink>
+              <NavLink to="/interviews" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">📅</span>
+                {sidebarOpen && <span>2nd Round: Tech Panel</span>}
+              </NavLink>
+              <NavLink to="/onboarding" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">✅</span>
+                {sidebarOpen && <span>4th Round: HR / Onboarding</span>}
+              </NavLink>
+            </>
+          )}
+
+          {activeRole !== 'Technical panel' && (
+            <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <span className="nav-icon">⚙️</span>
+              {sidebarOpen && <span>Settings</span>}
+            </NavLink>
+          )}
         </nav>
 
         {sidebarOpen && (
-          <div className="sidebar-user">
-            <div className="sidebar-user-avatar">S</div>
-            <div className="sidebar-user-info">
-              <div className="sidebar-user-name">Sameeraj</div>
-              <div className="sidebar-user-role">HR Admin</div>
+          <div className="sidebar-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '12px', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="sidebar-user-avatar">S</div>
+              <div className="sidebar-user-info">
+                <div className="sidebar-user-name">Sameeraj</div>
+                <div className="sidebar-user-role" style={{ textTransform: 'none', color: 'var(--blue)' }}>
+                  {activeRole === 'Recruiting' ? 'Recruiter' : activeRole === 'Operational head' ? 'Delivery Head' : 'Tech Panel'}
+                </div>
+              </div>
             </div>
+            
+            {/* Interactive Role Switcher dropdown */}
+            <select
+              value={activeRole}
+              onChange={e => handleRoleChange(e.target.value)}
+              style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                color: 'var(--t1)',
+                padding: '6px 8px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                cursor: 'pointer',
+                outline: 'none',
+                width: '100%',
+                fontWeight: '600',
+                transition: 'all 0.2s',
+                marginTop: '4px'
+              }}
+            >
+              <option value="Recruiting">Recruiting (TA)</option>
+              <option value="Technical panel">Technical Panel</option>
+              <option value="Operational head">Operational Head (Delivery)</option>
+            </select>
+
           </div>
         )}
 

@@ -46,6 +46,7 @@ class CandidateResponse(BaseModel):
     github_analysis: Optional[str] = None
     linkedin_url: Optional[str] = None
     linkedin_analysis: Optional[str] = None
+    client_feedback: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -206,5 +207,33 @@ class ImportSourcedRequest(BaseModel):
     match_score: float
     match_reason: str
     skills: List[str]
+
+
+# ===== ROLE BASED DASHBOARDS =====
+class TAActivityLogCreate(BaseModel):
+    date: str
+    activity: str
+    role_ids: Optional[str] = None
+    detail: str
+    outcome: Optional[str] = None
+
+class SpendLogCreate(BaseModel):
+    role_id: str
+    role: str
+    amount: float
+    approval_level: str
+    approver: str
+
+class QualityGateUpdate(BaseModel):
+    tech_fit: Optional[str] = None
+    client_readiness: Optional[str] = None
+    red_flags: Optional[str] = None
+    delivery_verdict: Optional[str] = None
+    client_feedback: Optional[str] = None
+
+class TechVerdictUpdate(BaseModel):
+    verdict: str
+    verdict_notes: Optional[str] = None
+
 
 

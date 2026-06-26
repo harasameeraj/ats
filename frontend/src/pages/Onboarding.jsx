@@ -39,7 +39,7 @@ export default function Onboarding() {
       setOnboarders(ob)
       setStats(st)
       // Filter candidates to show ONLY hired ones in the "Move to Onboarding" section
-      setCandidates(cands.filter(c => c.status === 'hired'))
+      setCandidates(cands.filter(c => c.status === 'hired' || (c.status === 'shortlisted' && c.client_feedback === 'OFFERED')))
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }

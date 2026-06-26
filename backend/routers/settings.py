@@ -104,33 +104,42 @@ def test_smtp_settings(data: SMTPSettingsUpdate, db: Session = Depends(get_db)):
     import ssl
     try:
         context = ssl.create_default_context()
-        with smtplib.SMTP(data.smtp_host, data.smtp_port, timeout=5) as server:
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
-            server.login(data.smtp_user, smtp_password)
-            
-            # Send test email
-            msg = MIMEMultipart("alternative")
-            msg["From"] = f"{data.smtp_from_name} <{data.smtp_user}>"
-            msg["To"] = data.smtp_user
-            msg["Subject"] = "Stitch ATS — SMTP connection test successful"
-            
-            html_content = f"""
-            <html>
-            <body style="font-family: sans-serif; line-height: 1.6; color: #1a1a2e; padding: 20px;">
-                <h2 style="color: #4ade80;">SMTP Connection Successful!</h2>
-                <p>Hello,</p>
-                <p>This email confirms that your SMTP configuration for **Stitch ATS** is working correctly.</p>
-                <p>Emails can now be sent successfully to your candidates.</p>
-                <br>
-                <p>Regards,<br>Stitch ATS System</p>
-            </body>
-            </html>
-            """
-            msg.attach(MIMEText(html_content, "html", "utf-8"))
-            server.sendmail(data.smtp_user, data.smtp_user, msg.as_string())
-            
+        
+        # Construct test email message first
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"{data.smtp_from_name} <{data.smtp_user}>"
+        msg["To"] = data.smtp_user
+        msg["Subject"] = "Stitch ATS — SMTP connection test successful"
+        
+        html_content = f"""
+        <html>
+        <body style="font-family: sans-serif; line-height: 1.6; color: #1a1a2e; padding: 20px;">
+            <h2 style="color: #4ade80;">SMTP Connection Successful!</h2>
+            <p>Hello,</p>
+            <p>This email confirms that your SMTP configuration for **Stitch ATS** is working correctly.</p>
+            <p>Emails can now be sent successfully to your candidates.</p>
+            <br>
+            <p>Regards,<br>Stitch ATS System</p>
+        </body>
+        </html>
+        """
+        msg.attach(MIMEText(html_content, "html", "utf-8"))
+        
+        if data.smtp_port == 465:
+            with smtplib.SMTP_SSL(data.smtp_host, data.smtp_port, timeout=5, context=context) as server:
+                server.login(data.smtp_user, smtp_password)
+                server.sendmail(data.smtp_user, data.smtp_user, msg.as_string())
+        else:
+            with smtplib.SMTP(data.smtp_host, data.smtp_port, timeout=5) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(data.smtp_user, smtp_password)
+                server.sendmail(data.smtp_user, data.smtp_user, msg.as_string())
+                
         return {"success": True, "message": "Connection test successful! Test email sent to your inbox."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"SMTP Connection Test Failed: {str(e)}")
