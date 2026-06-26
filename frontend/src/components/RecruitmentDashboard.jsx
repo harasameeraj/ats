@@ -190,9 +190,9 @@ export default function RecruitmentDashboard() {
 
   const totalCands = pipeline.length
   const linkedinCands = pipeline.filter(c => c.source === 'LinkedIn').length
-  const naukriCands = totalCands - linkedinCands
-  const naukriPct = totalCands > 0 ? Math.round((naukriCands / totalCands) * 100) : 50
-  const linkedinPct = totalCands > 0 ? 100 - naukriPct : 50
+  const githubCands = totalCands - linkedinCands
+  const githubPct = totalCands > 0 ? Math.round((githubCands / totalCands) * 100) : 50
+  const linkedinPct = totalCands > 0 ? 100 - githubPct : 50
 
   const filteredPipeline = pipeline.filter(c => 
     c.name.toLowerCase().includes(filterText.toLowerCase()) ||
@@ -292,11 +292,11 @@ export default function RecruitmentDashboard() {
                 {/* Horizontal split bar */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>
-                    <span style={{ color: 'var(--blue)' }}>Naukri ({naukriPct}%)</span>
+                    <span style={{ color: 'var(--blue)' }}>GitHub ({githubPct}%)</span>
                     <span style={{ color: '#0a66c2' }}>LinkedIn ({linkedinPct}%)</span>
                   </div>
                   <div style={{ height: '24px', width: '100%', display: 'flex', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                    <div style={{ background: 'var(--blue)', width: `${naukriPct}%`, display: naukriPct > 0 ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold', transition: 'width 0.3s ease' }}>Naukri</div>
+                    <div style={{ background: 'var(--blue)', width: `${githubPct}%`, display: githubPct > 0 ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold', transition: 'width 0.3s ease' }}>GitHub</div>
                     <div style={{ background: '#0a66c2', width: `${linkedinPct}%`, display: linkedinPct > 0 ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold', transition: 'width 0.3s ease' }}>LI</div>
                   </div>
                 </div>
@@ -432,8 +432,8 @@ export default function RecruitmentDashboard() {
                             </span>
                           </td>
                           <td style={{ fontSize: '0.78rem', color: 'var(--t2)' }}>{c.role}</td>
-                          <td style={{ fontSize: '0.78rem', color: c.source === 'LinkedIn' ? '#0a66c2' : 'var(--blue)', fontWeight: 600 }}>
-                            {c.source === 'LinkedIn' ? '🔗 LinkedIn' : '📂 Naukri'}
+                          <td style={{ fontSize: '0.78rem', color: c.source === 'LinkedIn' ? '#0a66c2' : '#333333', fontWeight: 600 }}>
+                            {c.source === 'LinkedIn' ? '🔗 LinkedIn' : '🐙 GitHub'}
                           </td>
                           <td>
                             <span className={`status-badge status-${c.ta_stage.toLowerCase()}`}>{c.ta_stage}</span>
@@ -804,7 +804,7 @@ export default function RecruitmentDashboard() {
             {/* Request budget form */}
             <div className="card">
               <div className="card-title">Request Candidate Sourcing Budget</div>
-              <p className="card-sub">Request funds to sponsor inMail campaigns or Naukri database access.</p>
+              <p className="card-sub">Request funds to sponsor inMail campaigns or premium developer database access.</p>
 
               <form onSubmit={handleAddSpend} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
                 <div className="form-group">

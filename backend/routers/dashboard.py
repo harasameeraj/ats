@@ -128,7 +128,7 @@ def get_recruitment_dashboard(db: Session = Depends(get_db)):
             "name": c.name,
             "role_id": role_id,
             "role": c.role or "General",
-            "source": "LinkedIn" if (c.linkedin_url and "hara-sameeraj" in c.linkedin_url.lower()) or "nair" in c.name.lower() else "Naukri",
+            "source": ("GitHub" if c.id % 2 == 0 else "LinkedIn") if c.github_url and c.linkedin_url else ("GitHub" if c.github_url else ("LinkedIn" if c.linkedin_url else "GitHub")),
             "ta_stage": c.status.capitalize(),
             "sent_to_delivery": sent,
             "delivery_verdict": c.delivery_verdict or "NOT STARTED"
