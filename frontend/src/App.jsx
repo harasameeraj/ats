@@ -236,7 +236,7 @@ function AppContent() {
             <svg viewBox="0 0 32 32" fill="none" width="28" height="28">
               <rect width="32" height="32" rx="8" fill="url(#slg)" />
               <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              <defs><linearGradient id="slg" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#6366f1" /><stop offset="1" stopColor="#a855f7" /></linearGradient></defs>
+              <defs><linearGradient id="slg" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#047857" /><stop offset="1" stopColor="#10b981" /></linearGradient></defs>
             </svg>
             {sidebarOpen && (
               <div style={{ display: 'flex', flexDirection: 'column' }}>

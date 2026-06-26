@@ -48,7 +48,7 @@ export default function WorkflowProgressionTracker({ selectedStage, onStageSelec
       title: '🎙️ Tech Panel & Quality Gate',
       role: 'Evaluator / Delivery Head',
       count: techCount,
-      isResponsible: activeRole === 'Operational head' || activeRole === 'Technical panel',
+      isResponsible: activeRole === 'Recruiting' || activeRole === 'Operational head' || activeRole === 'Technical panel',
     },
     {
       id: 'client',
