@@ -199,9 +199,17 @@ function Topbar() {
 function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeRole, setActiveRole] = useState(localStorage.getItem('activeRole') || 'Recruiting')
+  const [toast, setToast] = useState(null)
   const location = useLocation()
   const navigate = useNavigate()
   const isAssessmentPage = location.pathname.startsWith('/assessment/')
+
+  function showToast(message) {
+    setToast(message)
+    setTimeout(() => {
+      setToast(null)
+    }, 3000)
+  }
 
   function handleRoleChange(newRole) {
     setActiveRole(newRole)
@@ -230,10 +238,43 @@ function AppContent() {
               <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
               <defs><linearGradient id="slg" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#6366f1" /><stop offset="1" stopColor="#a855f7" /></linearGradient></defs>
             </svg>
-            {sidebarOpen && <span className="sidebar-title">Stitch ATS</span>}
+            {sidebarOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="sidebar-title">Stitch ATS</span>
+                <span className="sidebar-subtitle" style={{ fontSize: '0.65rem', color: 'var(--t3)', fontWeight: '500', marginTop: '2px' }}>
+                  {activeRole === 'Recruiting' 
+                    ? 'Enterprise Recruitment' 
+                    : activeRole === 'Technical panel' 
+                      ? 'Technical Evaluator Portal' 
+                      : 'Operations & Delivery Hub'}
+                </span>
+              </div>
+            )}
           </div>
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? '◁' : '▷'}
+          </button>
+        </div>
+
+        {/* New Requisition Button */}
+        <div className="sidebar-req-container" style={{ padding: sidebarOpen ? '12px 16px 4px 16px' : '12px 10px 4px 10px' }}>
+          <button 
+            className="btn btn-primary sidebar-req-btn" 
+            onClick={() => showToast('New Requisition panel is not available in the demo.')}
+            style={{
+              width: '100%',
+              justifyContent: 'center',
+              padding: sidebarOpen ? '8px 12px' : '8px 0',
+              fontSize: '0.8rem',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: sidebarOpen ? '6px' : '0',
+            }}
+            title="New Requisition"
+          >
+            <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>+</span>
+            {sidebarOpen && <span>New Requisition</span>}
           </button>
         </div>
 
@@ -254,16 +295,16 @@ function AppContent() {
           {activeRole === 'Recruiting' && (
             <>
               <NavLink to="/screening" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                <span className="nav-icon">🤖</span>
-                {sidebarOpen && <span>1st Round: AI Screening</span>}
+                <span className="nav-icon">🧠</span>
+                {sidebarOpen && <span>AI Screening</span>}
               </NavLink>
               <NavLink to="/interviews" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                <span className="nav-icon">📅</span>
-                {sidebarOpen && <span>2nd Round: Tech Panel</span>}
+                <span className="nav-icon">💻</span>
+                {sidebarOpen && <span>Tech Panel</span>}
               </NavLink>
               <NavLink to="/onboarding" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                <span className="nav-icon">✅</span>
-                {sidebarOpen && <span>4th Round: HR / Onboarding</span>}
+                <span className="nav-icon">👥</span>
+                {sidebarOpen && <span>Onboarding</span>}
               </NavLink>
             </>
           )}
@@ -274,10 +315,32 @@ function AppContent() {
               {sidebarOpen && <span>Settings</span>}
             </NavLink>
           )}
+
+          {/* Support and Archive Links */}
+          <div className="sidebar-nav-divider" style={{ borderTop: '1px solid var(--border)', margin: '8px 0', padding: '8px 0 0 0' }}>
+            <a 
+              href="#support" 
+              onClick={(e) => { e.preventDefault(); showToast('Support panel is not available in the demo.'); }}
+              className="nav-item"
+              title="Support"
+            >
+              <span className="nav-icon">💬</span>
+              {sidebarOpen && <span>Support</span>}
+            </a>
+            <a 
+              href="#archive" 
+              onClick={(e) => { e.preventDefault(); showToast('Archive panel is not available in the demo.'); }}
+              className="nav-item"
+              title="Archive"
+            >
+              <span className="nav-icon">🗄️</span>
+              {sidebarOpen && <span>Archive</span>}
+            </a>
+          </div>
         </nav>
 
         {sidebarOpen && (
-          <div className="sidebar-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '12px', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="sidebar-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '12px', gap: '8px', borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div className="sidebar-user-avatar">S</div>
               <div className="sidebar-user-info">
@@ -334,6 +397,14 @@ function AppContent() {
           </Routes>
         </div>
       </main>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="toast-notification">
+          <span>ℹ️</span>
+          <span>{toast}</span>
+        </div>
+      )}
     </div>
   )
 }

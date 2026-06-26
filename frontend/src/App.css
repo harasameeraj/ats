@@ -9,8 +9,11 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg: #fcfcfd;
+  --bg: #ffffff;
   --white: #ffffff;
+  --sidebar-bg: #f4f6fa;
+  --brand-green: #047857;
+  --brand-green-hover: #059669;
   --card: #ffffff;
   --card-h: #f9fafb;
   --border: #e4e4e7;
@@ -48,6 +51,9 @@
 [data-theme="dark"] {
   --bg: #09090b;
   --white: #18181b;
+  --sidebar-bg: #0f0f11;
+  --brand-green: #059669;
+  --brand-green-hover: #047857;
   --card: #18181b;
   --card-h: #27272a;
   --border: #27272a;
@@ -697,16 +703,16 @@ option {
   display: flex; align-items: center; justify-content: center;
   aspect-ratio: 1;
 }
-.cal-day:hover { background: var(--blue-bg); color: var(--blue); }
+.cal-day:hover { background: var(--green-bg); color: var(--brand-green); }
 .cal-day.today { 
-  background: var(--blue); color: white; font-weight: 700;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+  background: var(--brand-green); color: white; font-weight: 700;
+  box-shadow: 0 2px 6px rgba(4, 120, 87, 0.25);
 }
 .cal-day.dim { color: var(--border2); }
 .cal-day.has-event { position: relative; font-weight: 700; }
 .cal-day.has-event::after {
   content: ''; position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
-  width: 4px; height: 4px; border-radius: 50%; background: var(--blue);
+  width: 4px; height: 4px; border-radius: 50%; background: var(--brand-green);
 }
 .cal-day.today.has-event::after { background: white; }
 
@@ -1112,9 +1118,9 @@ option {
 
 /* Selected Active Filter State */
 .workflow-stage-node.is-selected .workflow-stage-icon-wrap {
-  border-color: var(--blue);
-  background: var(--blue-bg);
-  box-shadow: var(--shadow-glow);
+  border-color: var(--brand-green);
+  background: var(--green-bg);
+  box-shadow: 0 0 15px 1px rgba(4, 120, 87, 0.08);
   transform: scale(1.05);
 }
 
@@ -1128,8 +1134,8 @@ option {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 2px solid var(--blue);
-  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  border: 2px solid var(--brand-green);
+  box-shadow: 0 0 0 0 rgba(4, 120, 87, 0.4);
   animation: workflowPulse 2s infinite;
   pointer-events: none;
 }
@@ -1137,15 +1143,15 @@ option {
 @keyframes workflowPulse {
   0% {
     transform: translateX(-50%) scale(0.95);
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+    box-shadow: 0 0 0 0 rgba(4, 120, 87, 0.7);
   }
   70% {
     transform: translateX(-50%) scale(1.15);
-    box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 10px rgba(4, 120, 87, 0);
   }
   100% {
     transform: translateX(-50%) scale(0.95);
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 0 rgba(4, 120, 87, 0);
   }
 }
 
@@ -1177,7 +1183,7 @@ option {
 }
 
 .workflow-stage-node.is-selected .workflow-stage-title {
-  color: var(--blue);
+  color: var(--brand-green);
 }
 
 .workflow-stage-role {
@@ -1197,7 +1203,7 @@ option {
 }
 
 .workflow-connection-line.is-active {
-  background: linear-gradient(90deg, var(--blue), var(--purple));
+  background: linear-gradient(90deg, var(--brand-green), var(--purple));
 }
 
 .workflow-filter-info {
@@ -1205,7 +1211,7 @@ option {
   justify-content: space-between;
   align-items: center;
   background: var(--grad-subtle);
-  border: 1px dashed var(--blue-l);
+  border: 1px dashed var(--brand-green);
   border-radius: 8px;
   padding: 0.5rem 1rem;
   margin-top: 1rem;
@@ -1215,7 +1221,7 @@ option {
 }
 
 .workflow-clear-btn {
-  background: var(--blue);
+  background: var(--brand-green);
   color: white;
   border: none;
   border-radius: 4px;
@@ -1227,7 +1233,31 @@ option {
 }
 
 .workflow-clear-btn:hover {
-  background: var(--blue-l);
+  background: var(--brand-green-hover);
   transform: translateY(-1px);
+}
+
+/* ===== TOAST NOTIFICATION ===== */
+.toast-notification {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 12px 18px;
+  border-radius: var(--r);
+  font-size: 0.82rem;
+  font-weight: 550;
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 99999;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .toast-notification {
+  background: #1e293b;
+  color: #fafafa;
 }
 
