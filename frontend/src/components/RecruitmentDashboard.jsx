@@ -188,6 +188,12 @@ export default function RecruitmentDashboard() {
 
   const { kpis, handoff_summary, priorities, pipeline, submissions, spend_logs, activity_logs } = data
 
+  const totalCands = pipeline.length
+  const linkedinCands = pipeline.filter(c => c.source === 'LinkedIn').length
+  const naukriCands = totalCands - linkedinCands
+  const naukriPct = totalCands > 0 ? Math.round((naukriCands / totalCands) * 100) : 50
+  const linkedinPct = totalCands > 0 ? 100 - naukriPct : 50
+
   const filteredPipeline = pipeline.filter(c => 
     c.name.toLowerCase().includes(filterText.toLowerCase()) ||
     c.role.toLowerCase().includes(filterText.toLowerCase()) ||
@@ -286,12 +292,12 @@ export default function RecruitmentDashboard() {
                 {/* Horizontal split bar */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>
-                    <span style={{ color: 'var(--blue)' }}>Naukri (85%)</span>
-                    <span style={{ color: '#0a66c2' }}>LinkedIn (15%)</span>
+                    <span style={{ color: 'var(--blue)' }}>Naukri ({naukriPct}%)</span>
+                    <span style={{ color: '#0a66c2' }}>LinkedIn ({linkedinPct}%)</span>
                   </div>
                   <div style={{ height: '24px', width: '100%', display: 'flex', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                    <div style={{ background: 'var(--blue)', width: '85%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold' }}>Naukri</div>
-                    <div style={{ background: '#0a66c2', width: '15%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold' }}>LI</div>
+                    <div style={{ background: 'var(--blue)', width: `${naukriPct}%`, display: naukriPct > 0 ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold', transition: 'width 0.3s ease' }}>Naukri</div>
+                    <div style={{ background: '#0a66c2', width: `${linkedinPct}%`, display: linkedinPct > 0 ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.72rem', fontWeight: 'bold', transition: 'width 0.3s ease' }}>LI</div>
                   </div>
                 </div>
 
