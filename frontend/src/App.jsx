@@ -316,27 +316,7 @@ function AppContent() {
             </NavLink>
           )}
 
-          {/* Support and Archive Links */}
-          <div className="sidebar-nav-divider" style={{ borderTop: '1px solid var(--border)', margin: '8px 0', padding: '8px 0 0 0' }}>
-            <a 
-              href="#support" 
-              onClick={(e) => { e.preventDefault(); showToast('Support panel is not available in the demo.'); }}
-              className="nav-item"
-              title="Support"
-            >
-              <span className="nav-icon">💬</span>
-              {sidebarOpen && <span>Support</span>}
-            </a>
-            <a 
-              href="#archive" 
-              onClick={(e) => { e.preventDefault(); showToast('Archive panel is not available in the demo.'); }}
-              className="nav-item"
-              title="Archive"
-            >
-              <span className="nav-icon">🗄️</span>
-              {sidebarOpen && <span>Archive</span>}
-            </a>
-          </div>
+
         </nav>
 
         {sidebarOpen && (
