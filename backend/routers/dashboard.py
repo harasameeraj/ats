@@ -6,7 +6,7 @@ Provides hiring funnel stats, activity feed, velocity data, and specialized recr
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..database import get_db
 from ..models import Candidate, Activity, Interview, Screening, Job, SpendLog, TAActivityLog
@@ -20,6 +20,61 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
+
+
+def get_today_interviews_list(db: Session):
+    from datetime import date
+    today_str = date.today().strftime("%Y-%m-%d")
+    today_ivs = (
+        db.query(Interview)
+        .filter(func.date(Interview.scheduled_at) == today_str)
+        .order_by(Interview.scheduled_at.asc())
+        .all()
+    )
+    res = []
+    for iv in today_ivs:
+        res.append({
+            "id": iv.id,
+            "candidate_id": iv.candidate_id,
+            "candidate_name": iv.candidate.name if iv.candidate else "Unknown",
+            "candidate_role": iv.candidate.role if iv.candidate else "General",
+            "interviewer_name": iv.interviewer_name,
+            "scheduled_at": iv.scheduled_at.isoformat(),
+            "duration_mins": iv.duration_mins,
+            "status": iv.status,
+            "notes": iv.notes
+        })
+    return res
+
+
+def get_joining_this_week_list(db: Session):
+    from datetime import date, timedelta
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    end_of_week = start_of_week + timedelta(days=6)          # Sunday
+    
+    joining_cands = (
+        db.query(Candidate)
+        .filter(
+            Candidate.status.in_(["offered", "onboarded", "completed"]),
+            func.date(Candidate.joining_date) >= start_of_week.strftime("%Y-%m-%d"),
+            func.date(Candidate.joining_date) <= end_of_week.strftime("%Y-%m-%d")
+        )
+        .order_by(Candidate.joining_date.asc())
+        .all()
+    )
+    
+    res = []
+    for c in joining_cands:
+        res.append({
+            "id": c.id,
+            "name": c.name,
+            "role": c.role or "General",
+            "offer_date": c.offer_date.strftime("%d %b") if c.offer_date else "TBD",
+            "joining_date": c.joining_date.strftime("%d %b") if c.joining_date else "TBD",
+            "status": c.status.capitalize()
+        })
+    return res
 
 
 @router.get("/stats", response_model=DashboardStats)
@@ -90,6 +145,7 @@ def get_recruitment_dashboard(db: Session = Depends(get_db)):
     ).count()
     first_submission_time = "31 hrs"  # Statically simulated performance metric
     client_ready_submissions = db.query(Candidate).filter(Candidate.delivery_verdict == "APPROVED").count()
+    offers_pending = db.query(Candidate).filter(Candidate.status == "offered").count()
     
     # 2. Handoff to Delivery Lead weekly summary
     handoff = {
@@ -101,15 +157,28 @@ def get_recruitment_dashboard(db: Session = Depends(get_db)):
     
     # 3. Roles by priority
     jobs = db.query(Job).all()
-    priorities = [
-        {
+    priorities = []
+    for j in jobs:
+        ageing_days = (datetime.now(timezone.utc) - j.created_at).days if j.created_at else 0
+        if ageing_days <= 10:
+            sla_status = "On Track"
+            sla_color = "#10b981"
+        elif ageing_days <= 25:
+            sla_status = "Warning"
+            sla_color = "#f59e0b"
+        else:
+            sla_status = "SLA Breached"
+            sla_color = "#ef4444"
+
+        priorities.append({
             "id": j.id,
             "role_id": j.role_id or f"DR-04{j.id}",
             "title": j.title,
-            "priority": j.priority or "NORMAL"
-        }
-        for j in jobs
-    ]
+            "priority": j.priority or "NORMAL",
+            "ageing_days": ageing_days,
+            "sla_status": sla_status,
+            "sla_color": sla_color
+        })
     
     # 4. Pipeline Candidates
     candidates = db.query(Candidate).all()
@@ -190,6 +259,7 @@ def get_recruitment_dashboard(db: Session = Depends(get_db)):
             "sent_to_delivery_gate": sent_to_delivery_gate,
             "first_submission_time": first_submission_time,
             "client_ready_submissions": client_ready_submissions,
+            "offers_pending": offers_pending,
             "source_split": "85/15%"
         },
         "handoff_summary": handoff,
@@ -197,7 +267,9 @@ def get_recruitment_dashboard(db: Session = Depends(get_db)):
         "pipeline": pipeline,
         "submissions": submissions,
         "spend_logs": spend_list,
-        "activity_logs": activity_list
+        "activity_logs": activity_list,
+        "today_interviews": get_today_interviews_list(db),
+        "joining_this_week": get_joining_this_week_list(db)
     }
 
 
@@ -211,6 +283,7 @@ def get_delivery_dashboard(db: Session = Depends(get_db)):
     interview_conversion = "44%"
     offer_joining = "87%"
     sla_adherence = "91%"
+    offers_pending = db.query(Candidate).filter(Candidate.status == "offered").count()
     
     # Conversion Funnel (Weekly numbers)
     funnel = {
@@ -225,7 +298,7 @@ def get_delivery_dashboard(db: Session = Depends(get_db)):
     eval_candidates = (
         db.query(Candidate)
         .filter(
-            Candidate.status.in_(["screened", "shortlisted", "interviewed"]),
+            Candidate.status.in_(["screened", "shortlisted", "interviewed", "delivery_review"]),
             Candidate.delivery_verdict.in_(["NOT STARTED", "PENDING"])
         )
         .all()
@@ -277,8 +350,8 @@ def get_delivery_dashboard(db: Session = Depends(get_db)):
             "id": c.id,
             "name": c.name,
             "role": c.role or "General",
-            "offer_date": "22 Jun",
-            "joining_date": "06 Jul",
+            "offer_date": c.offer_date.strftime("%d %b") if c.offer_date else "TBD",
+            "joining_date": c.joining_date.strftime("%d %b") if c.joining_date else "TBD",
             "status": "Offer Confirmed" if c.status == "offered" else "Onboarded",
             "action_required": "None" if c.status != "offered" else "Awaiting onboarding setup"
         })
@@ -302,14 +375,17 @@ def get_delivery_dashboard(db: Session = Depends(get_db)):
             "shortlist_rate": shortlist_rate,
             "interview_conversion": interview_conversion,
             "offer_joining": offer_joining,
-            "sla_adherence": sla_adherence
+            "sla_adherence": sla_adherence,
+            "offers_pending": offers_pending
         },
         "funnel": funnel,
         "evaluation_queue": evaluation_queue,
         "interviews": interview_list,
         "joining_tracker": joining_list,
         "sla_governance": sla_governance,
-        "sla_breach_warning": is_breached
+        "sla_breach_warning": is_breached,
+        "today_interviews": get_today_interviews_list(db),
+        "joining_this_week": get_joining_this_week_list(db)
     }
 
 
@@ -410,7 +486,7 @@ def update_candidate_verdict(id: int, req: QualityGateUpdate, db: Session = Depe
         candidate.delivery_verdict = req.delivery_verdict
         # Auto-update status if approved or rejected
         if req.delivery_verdict == "APPROVED":
-            candidate.status = "shortlisted"
+            candidate.status = "approved"
         elif req.delivery_verdict == "REJECTED":
             candidate.status = "rejected"
     if req.client_feedback is not None:

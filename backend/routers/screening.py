@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from ..database import get_db
-from ..models import Job, Candidate, Screening, Activity
-from ..schemas import ScreeningResult, JobResponse, CandidateResponse, SourcingRequest, ImportSourcedRequest
+from ..models import Candidate, Job, Screening, Activity, CandidateNote, Interview, CommunicationLog, User
+from ..schemas import ScreeningResult, JobResponse, CandidateResponse, SourcingRequest, ImportSourcedRequest, JobUpdate
+from ..auth_utils import get_current_user
 from ..services.file_parser import extract_text, extract_candidate_name, extract_email, extract_phone, extract_github_url, extract_linkedin_url
-from ..services.ai_screening import screen_single_candidate
+from ..services.ai_screening import screen_single_candidate, generate_candidate_rubric
 
 router = APIRouter(prefix="/api/screening", tags=["Screening"])
 
@@ -181,7 +182,11 @@ async def run_screening(
             gaps=ai_result["gaps"],
             overall_summary=ai_result["overall_summary"],
             seniority_fit=ai_result["seniority_fit"],
-            rejection_reason=ai_result["rejection_reason"]
+            rejection_reason=ai_result["rejection_reason"],
+            score_justification=ai_result["score_justification"],
+            jd_vs_cv_score=ai_result["jd_vs_cv_score"],
+            jd_vs_linkedin_score=ai_result["jd_vs_linkedin_score"],
+            jd_vs_github_score=ai_result["jd_vs_github_score"]
         )
         db.add(screening)
 
@@ -206,11 +211,15 @@ async def run_screening(
             "candidate_email": candidate.email,
             "candidate_role": candidate.role,
             "match_score": ai_result["match_score"],
+            "jd_vs_cv_score": ai_result["jd_vs_cv_score"],
+            "jd_vs_linkedin_score": ai_result["jd_vs_linkedin_score"],
+            "jd_vs_github_score": ai_result["jd_vs_github_score"],
             "strengths": json.loads(ai_result["strengths"]) if ai_result["strengths"] else [],
             "gaps": json.loads(ai_result["gaps"]) if ai_result["gaps"] else [],
             "overall_summary": ai_result["overall_summary"],
             "seniority_fit": ai_result["seniority_fit"],
             "rejection_reason": ai_result["rejection_reason"],
+            "score_justification": ai_result["score_justification"],
             "status": candidate.status,
             "assessment_status": candidate.assessment_status,
             "assessment_score": candidate.assessment_score,
@@ -220,7 +229,8 @@ async def run_screening(
             "github_analysis": candidate.github_analysis,
             "linkedin_url": candidate.linkedin_url,
             "linkedin_analysis": candidate.linkedin_analysis,
-            "resume_text": candidate.resume_text
+            "resume_text": candidate.resume_text,
+            "resume_filename": candidate.resume_filename
         })
 
     # Log activity
@@ -243,6 +253,28 @@ async def run_screening(
 def list_jobs(db: Session = Depends(get_db)):
     """List all jobs."""
     return db.query(Job).order_by(Job.created_at.desc()).all()
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job(job_id: int, db: Session = Depends(get_db)):
+    """Delete a single job by ID (removes past screening)."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    title = job.title
+    db.delete(job)
+    
+    activity = Activity(
+        action="Screening Deleted",
+        description=f"Deleted AI Screening: {title}",
+        icon="🗑️",
+        color="#ef4444"
+    )
+    db.add(activity)
+    db.commit()
+    
+    return {"message": f"Screening {title} deleted successfully"}
 
 
 @router.get("/candidates", response_model=List[CandidateResponse])
@@ -271,11 +303,15 @@ def get_results(job_id: int, db: Session = Depends(get_db)):
             "candidate_email": candidate.email if candidate else None,
             "candidate_role": candidate.role if candidate else None,
             "match_score": s.match_score,
+            "jd_vs_cv_score": s.jd_vs_cv_score if s.jd_vs_cv_score is not None else s.match_score,
+            "jd_vs_linkedin_score": s.jd_vs_linkedin_score if s.jd_vs_linkedin_score is not None else s.match_score,
+            "jd_vs_github_score": s.jd_vs_github_score if s.jd_vs_github_score is not None else s.match_score,
             "strengths": json.loads(s.strengths) if s.strengths else [],
             "gaps": json.loads(s.gaps) if s.gaps else [],
             "overall_summary": s.overall_summary,
             "seniority_fit": s.seniority_fit,
             "rejection_reason": s.rejection_reason,
+            "score_justification": s.score_justification,
             "status": candidate.status if candidate else "unknown",
             "assessment_status": candidate.assessment_status if candidate else None,
             "assessment_score": candidate.assessment_score if candidate else None,
@@ -285,6 +321,7 @@ def get_results(job_id: int, db: Session = Depends(get_db)):
             "github_analysis": candidate.github_analysis if candidate else None,
             "linkedin_url": candidate.linkedin_url if candidate else None,
             "linkedin_analysis": candidate.linkedin_analysis if candidate else None,
+            "resume_filename": candidate.resume_filename if candidate else None,
             "created_at": s.created_at.isoformat(),
             "resume_text": candidate.resume_text if candidate else ""
         })
@@ -562,10 +599,7 @@ def source_candidates(req: SourcingRequest, db: Session = Depends(get_db)):
     
     # 2. Query GitHub or run fallback
     candidates = search_github_candidates(skills, location)
-    if len(candidates) < 5:
-        # Fallback generated profiles to ensure high-fidelity sourcing works perfectly
-        candidates = generate_fallback_candidates(skills, location, job.title)
-    
+    # Removed fake fallback generated profiles
     # 3. Score candidates with AI
     scored_candidates = score_sourced_candidates(candidates, job.description, job.title, skills)
     
@@ -621,6 +655,9 @@ def import_sourced_candidate(req: ImportSourcedRequest, db: Session = Depends(ge
             job_id=req.job_id,
             candidate_id=candidate.id,
             match_score=req.match_score,
+            jd_vs_cv_score=req.match_score,
+            jd_vs_linkedin_score=req.match_score,
+            jd_vs_github_score=req.match_score,
             strengths=json.dumps(req.skills),
             gaps=json.dumps([]),
             overall_summary=req.match_reason,
@@ -648,6 +685,9 @@ def import_sourced_candidate(req: ImportSourcedRequest, db: Session = Depends(ge
         "candidate_email": candidate.email,
         "candidate_role": candidate.role,
         "match_score": screening.match_score,
+        "jd_vs_cv_score": screening.jd_vs_cv_score if screening.jd_vs_cv_score is not None else screening.match_score,
+        "jd_vs_linkedin_score": screening.jd_vs_linkedin_score if screening.jd_vs_linkedin_score is not None else screening.match_score,
+        "jd_vs_github_score": screening.jd_vs_github_score if screening.jd_vs_github_score is not None else screening.match_score,
         "strengths": req.skills,
         "gaps": [],
         "overall_summary": screening.overall_summary,
@@ -662,3 +702,481 @@ def import_sourced_candidate(req: ImportSourcedRequest, db: Session = Depends(ge
         "linkedin_analysis": candidate.linkedin_analysis,
         "resume_text": candidate.resume_text
     }
+
+
+@router.post("/candidate/{candidate_id}/status")
+def update_candidate_status(candidate_id: int, status: str, db: Session = Depends(get_db)):
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    old_status = candidate.status
+    target_status = status.lower()
+    
+    if target_status == "offered":
+        from datetime import datetime, timedelta, timezone
+        if not candidate.offer_date:
+            candidate.offer_date = datetime.now(timezone.utc)
+    
+    if target_status == "approved":
+        candidate.status = "shortlisted"
+        candidate.delivery_verdict = "APPROVED"
+        display_status = "Client Review (Approved)"
+    elif target_status in ("shortlisted", "screened", "uploaded"):
+        candidate.status = target_status
+        candidate.delivery_verdict = "NOT STARTED"
+        display_status = target_status.capitalize()
+    else:
+        candidate.status = target_status
+        display_status = target_status.capitalize()
+    
+    activity = Activity(
+        action="Candidate Stage Moved",
+        description=f"{candidate.name} moved from {old_status.capitalize()} to {display_status}",
+        icon="🔄",
+        color="#6366f1"
+    )
+    db.add(activity)
+    db.commit()
+    return {"message": "Candidate status updated successfully", "status": candidate.status, "delivery_verdict": candidate.delivery_verdict}
+
+
+@router.post("/candidate/{candidate_id}/rubric")
+def get_or_create_candidate_rubric(candidate_id: int, db: Session = Depends(get_db)):
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    # If already generated, load and return
+    if candidate.tech_rubric:
+        try:
+            return json.loads(candidate.tech_rubric)
+        except Exception:
+            pass
+            
+    # Find job description
+    screening = db.query(Screening).filter(Screening.candidate_id == candidate.id).first()
+    job = db.query(Job).filter(Job.id == screening.job_id).first() if screening else None
+    jd_text = job.description if job else ""
+    
+    # Generate using AI service
+    rubric_dict = generate_candidate_rubric(
+        candidate_name=candidate.name,
+        role=candidate.role or "Software Developer",
+        resume_text=candidate.resume_text or "",
+        jd_text=jd_text
+    )
+    
+    # Cache in database
+    candidate.tech_rubric = json.dumps(rubric_dict)
+    db.commit()
+    
+    return rubric_dict
+
+
+@router.get("/candidate/{candidate_id}/notes")
+def get_candidate_notes(candidate_id: int, db: Session = Depends(get_db)):
+    """Fetch all recruiter notes for a candidate."""
+    notes = (
+        db.query(CandidateNote)
+        .filter(CandidateNote.candidate_id == candidate_id)
+        .order_by(CandidateNote.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": n.id,
+            "candidate_id": n.candidate_id,
+            "author": n.author,
+            "content": n.content,
+            "created_at": n.created_at.isoformat()
+        }
+        for n in notes
+    ]
+
+
+from pydantic import BaseModel
+class NoteCreateRequest(BaseModel):
+    content: str
+
+
+@router.post("/candidate/{candidate_id}/notes")
+def create_candidate_note(candidate_id: int, req: NoteCreateRequest, db: Session = Depends(get_db)):
+    """Add a new note to a candidate's profile."""
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    new_note = CandidateNote(
+        candidate_id=candidate.id,
+        author="Recruiter",
+        content=req.content
+    )
+    db.add(new_note)
+    
+    activity = Activity(
+        action="Recruiter Note Added",
+        description=f"Note added to {candidate.name}: '{req.content[:40]}...'",
+        icon="💬",
+        color="#3b82f6"
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(new_note)
+
+    return {
+        "id": new_note.id,
+        "candidate_id": new_note.candidate_id,
+        "author": new_note.author,
+        "content": new_note.content,
+        "created_at": new_note.created_at.isoformat()
+    }
+
+
+class AssociateRequest(BaseModel):
+    candidate_id: int
+    job_id: int
+
+
+@router.post("/associate")
+def associate_candidate_to_job(req: AssociateRequest, db: Session = Depends(get_db)):
+    """Associate a candidate (e.g. from talent pool) with a new job and run AI screening."""
+    candidate = db.query(Candidate).filter(Candidate.id == req.candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+        
+    job = db.query(Job).filter(Job.id == req.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Run AI screening for the candidate against the new Job description
+    ai_result = screen_single_candidate(
+        jd_text=job.description,
+        resume_text=candidate.resume_text or "",
+        candidate_name=candidate.name
+    )
+
+    # Check if a screening already exists for this candidate & job, or create new
+    screening = db.query(Screening).filter(
+        Screening.candidate_id == candidate.id,
+        Screening.job_id == job.id
+    ).first()
+
+    if not screening:
+        screening = Screening(
+            job_id=job.id,
+            candidate_id=candidate.id,
+            match_score=ai_result["match_score"],
+            strengths=ai_result["strengths"],
+            gaps=ai_result["gaps"],
+            overall_summary=ai_result["overall_summary"],
+            seniority_fit=ai_result["seniority_fit"],
+            rejection_reason=ai_result["rejection_reason"],
+            score_justification=ai_result["score_justification"]
+        )
+        db.add(screening)
+    else:
+        screening.match_score = ai_result["match_score"]
+        screening.strengths = ai_result["strengths"]
+        screening.gaps = ai_result["gaps"]
+        screening.overall_summary = ai_result["overall_summary"]
+        screening.seniority_fit = ai_result["seniority_fit"]
+        screening.rejection_reason = ai_result["rejection_reason"]
+        screening.score_justification = ai_result["score_justification"]
+
+    # Update candidate status, match score, and role
+    candidate.match_score = ai_result["match_score"]
+    candidate.rejection_reason = ai_result["rejection_reason"]
+    candidate.role = job.title
+    
+    if ai_result["match_score"] >= 70:
+        candidate.status = "shortlisted"
+    elif ai_result["match_score"] >= 40:
+        candidate.status = "screened"
+    else:
+        candidate.status = "rejected"
+
+    activity = Activity(
+        action="Talent Pool Matched",
+        description=f"Matched candidate {candidate.name} to role '{job.title}' with a score of {ai_result['match_score']}%",
+        icon="🎯",
+        color="#8b5cf6"
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(screening)
+
+    return {"message": "Candidate associated and screened successfully", "match_score": ai_result["match_score"], "status": candidate.status}
+
+
+@router.get("/candidate/{candidate_id}/timeline")
+def get_candidate_timeline(candidate_id: int, db: Session = Depends(get_db)):
+    """Get the chronological milestone events and workflow timeline for a candidate."""
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    events = []
+
+    # 1. Profile Uploaded
+    if candidate.created_at:
+        events.append({
+            "stage": "uploaded",
+            "title": "Profile Uploaded",
+            "date": candidate.created_at.isoformat(),
+            "status": "completed",
+            "description": f"Resume '{candidate.resume_filename or 'resume.pdf'}' uploaded and candidate profile created."
+        })
+
+    # 2. AI Resume Screenings
+    screenings = db.query(Screening).filter(Screening.candidate_id == candidate_id).all()
+    for s in screenings:
+        job = db.query(Job).filter(Job.id == s.job_id).first()
+        job_title = job.title if job else "Unknown Job"
+        events.append({
+            "stage": "screening",
+            "title": f"AI Screening: {job_title}",
+            "date": s.created_at.isoformat(),
+            "status": "completed",
+            "description": f"Evaluated with {s.match_score}% overall score (CV: {s.jd_vs_cv_score or s.match_score}%, LinkedIn: {s.jd_vs_linkedin_score or s.match_score}%, GitHub: {s.jd_vs_github_score or s.match_score}%)."
+        })
+
+    # 3. Assessment Invitation & Status
+    if candidate.assessment_token:
+        # Search activity logs for the exact invitation date, otherwise default to created_at
+        invite_activity = db.query(Activity).filter(
+            Activity.action == "Assessment Invited",
+            Activity.description.like(f"%sent to {candidate.name}%")
+        ).order_by(Activity.created_at.desc()).first()
+
+        invite_date = invite_activity.created_at if invite_activity else candidate.created_at
+
+        events.append({
+            "stage": "assessment_invited",
+            "title": "AI Assessment Invited",
+            "date": invite_date.isoformat(),
+            "status": "completed",
+            "description": f"AI technical test invite sent to {candidate.email}."
+        })
+
+        if candidate.assessment_status and candidate.assessment_status != "pending":
+            # Search activity logs for technical test submission date
+            submit_activity = db.query(Activity).filter(
+                Activity.action == "Assessment Submitted",
+                Activity.description.like(f"%{candidate.name}%")
+            ).first()
+            submit_date = submit_activity.created_at if submit_activity else invite_date
+
+            events.append({
+                "stage": "assessment_completed",
+                "title": f"AI Assessment {candidate.assessment_status.capitalize()}",
+                "date": submit_date.isoformat(),
+                "status": "completed",
+                "description": f"Completed and graded. Score: {candidate.assessment_score or 0}% with {candidate.assessment_violations or 0} violations."
+            })
+
+    # 4. Interview Workflow
+    interviews = db.query(Interview).filter(Interview.candidate_id == candidate_id).all()
+    for i in interviews:
+        verdict_str = f" Verdict: {i.verdict}." if i.verdict and i.verdict != "PENDING" else ""
+        events.append({
+            "stage": "interview",
+            "title": f"Interview: {i.interviewer_name}",
+            "date": i.scheduled_at.isoformat(),
+            "status": i.status,
+            "description": f"Scheduled for {i.duration_mins} mins.{verdict_str} Notes: {i.notes or 'None'}"
+        })
+
+    # 5. Offer Released
+    if candidate.offer_date:
+        events.append({
+            "stage": "offer",
+            "title": "Offer Released",
+            "date": candidate.offer_date.isoformat(),
+            "status": "completed",
+            "description": "Formal job offer generated and sent to candidate."
+        })
+
+    # 6. Joining Date
+    if candidate.joining_date:
+        events.append({
+            "stage": "joining",
+            "title": "Joining Date",
+            "date": candidate.joining_date.isoformat(),
+            "status": "pending" if candidate.status != "onboarded" else "completed",
+            "description": f"Scheduled joining date: {candidate.joining_date.strftime('%b %d, %Y')}."
+        })
+
+    # Sort completed events chronologically by date
+    events.sort(key=lambda x: x["date"])
+
+    # Core stages tracking
+    completed_stages = {e["stage"] for e in events}
+    
+    # Check for missing upcoming stages and append them at the end
+    has_assessment = "assessment_invited" in completed_stages or "assessment_completed" in completed_stages
+    if not has_assessment:
+        events.append({
+            "stage": "assessment_invited",
+            "title": "AI Assessment (Upcoming)",
+            "date": None,
+            "status": "upcoming",
+            "description": "Technical coding assessment is yet to be configured or invited."
+        })
+        
+    if "interview" not in completed_stages:
+        events.append({
+            "stage": "interview",
+            "title": "Technical Panel Interview (Upcoming)",
+            "date": None,
+            "status": "upcoming",
+            "description": "Technical panel evaluation is yet to be scheduled."
+        })
+        
+    if "offer" not in completed_stages:
+        events.append({
+            "stage": "offer",
+            "title": "Offer Release (Upcoming)",
+            "date": None,
+            "status": "upcoming",
+            "description": "Formal job offer release is yet to be generated."
+        })
+        
+    if "joining" not in completed_stages:
+        events.append({
+            "stage": "joining",
+            "title": "Onboarding & Joining (Upcoming)",
+            "date": None,
+            "status": "upcoming",
+            "description": "Expected joining date is yet to be scheduled."
+        })
+
+    return events
+
+
+@router.get("/candidate/{candidate_id}")
+def get_candidate_details(candidate_id: int, db: Session = Depends(get_db)):
+    """Fetch complete details of a candidate, including their active screening results."""
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+        
+    # Get active screening (latest)
+    screening = (
+        db.query(Screening)
+        .filter(Screening.candidate_id == candidate_id)
+        .order_by(Screening.created_at.desc())
+        .first()
+    )
+    
+    strengths = []
+    if screening and screening.strengths:
+        try:
+            strengths = json.loads(screening.strengths)
+            if not isinstance(strengths, list):
+                strengths = [str(strengths)]
+        except Exception:
+            strengths = [screening.strengths]
+            
+    gaps = []
+    if screening and screening.gaps:
+        try:
+            gaps = json.loads(screening.gaps)
+            if not isinstance(gaps, list):
+                gaps = [str(gaps)]
+        except Exception:
+            gaps = [screening.gaps]
+            
+    return {
+        "candidate_id": candidate.id,
+        "candidate_name": candidate.name,
+        "candidate_email": candidate.email,
+        "candidate_role": candidate.role,
+        "match_score": screening.match_score if screening else candidate.match_score or 0.0,
+        "jd_vs_cv_score": screening.jd_vs_cv_score if screening and screening.jd_vs_cv_score is not None else (screening.match_score if screening else candidate.match_score or 0.0),
+        "jd_vs_linkedin_score": screening.jd_vs_linkedin_score if screening and screening.jd_vs_linkedin_score is not None else (screening.match_score if screening else candidate.match_score or 0.0),
+        "jd_vs_github_score": screening.jd_vs_github_score if screening and screening.jd_vs_github_score is not None else (screening.match_score if screening else candidate.match_score or 0.0),
+        "strengths": strengths,
+        "gaps": gaps,
+        "overall_summary": screening.overall_summary if screening else "No screening details available.",
+        "seniority_fit": screening.seniority_fit if screening else "unknown",
+        "rejection_reason": candidate.rejection_reason,
+        "score_justification": screening.score_justification if screening else None,
+        "status": candidate.status,
+        "assessment_status": candidate.assessment_status,
+        "assessment_score": candidate.assessment_score,
+        "assessment_token": candidate.assessment_token,
+        "assessment_violations": candidate.assessment_violations,
+        "github_url": candidate.github_url,
+        "github_analysis": candidate.github_analysis,
+        "linkedin_url": candidate.linkedin_url,
+        "linkedin_analysis": candidate.linkedin_analysis,
+        "resume_text": candidate.resume_text,
+        "resume_filename": candidate.resume_filename,
+        "created_at": candidate.created_at.isoformat()
+    }
+
+
+@router.get("/communications/search")
+def search_communications(query: str = "", db: Session = Depends(get_db)):
+    """Search communication logs by candidate name or phone number."""
+    if not query.strip():
+        logs = db.query(CommunicationLog).order_by(CommunicationLog.created_at.desc()).all()
+    else:
+        # Filter candidates matching name or phone number
+        cand_ids = [
+            c.id for c in db.query(Candidate).filter(
+                (Candidate.name.like(f"%{query}%")) | 
+                (Candidate.phone.like(f"%{query}%"))
+            ).all()
+        ]
+        logs = db.query(CommunicationLog).filter(CommunicationLog.candidate_id.in_(cand_ids)).order_by(CommunicationLog.created_at.desc()).all()
+        
+    return [
+        {
+            "id": log.id,
+            "candidate_id": log.candidate_id,
+            "candidate_name": log.candidate.name,
+            "candidate_phone": log.candidate.phone or "N/A",
+            "type": log.type,
+            "subject": log.subject,
+            "body": log.body,
+            "sender": log.sender,
+            "recipient": log.recipient,
+            "created_at": log.created_at.isoformat()
+        }
+        for log in logs if log.candidate
+    ]
+
+
+
+@router.put("/jobs/{job_id}", response_model=JobResponse)
+def update_job(job_id: int, job_update: JobUpdate, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    update_data = job_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(job, key, value)
+        
+    db.commit()
+    db.refresh(job)
+    return job
+
+@router.post("/jobs", response_model=JobResponse)
+def create_job(job_create: JobUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    new_job = Job(
+        title=job_create.title or "Untitled Job",
+        description=job_create.description or "",
+        salary_range=job_create.salary_range,
+        location=job_create.location,
+        work_mode=job_create.work_mode,
+        experience_level=job_create.experience_level,
+        is_published=job_create.is_published,
+        company_id=current_user.company_id
+    )
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    return new_job

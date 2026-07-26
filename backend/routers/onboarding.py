@@ -74,7 +74,10 @@ def add_to_onboarding(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
+    from datetime import datetime, timedelta, timezone
     candidate.status = "offered"
+    if not candidate.offer_date:
+        candidate.offer_date = datetime.now(timezone.utc)
 
     # Create default onboarding tasks
     for task_template in DEFAULT_TASKS:
@@ -159,10 +162,10 @@ def onboarding_stats(db: Session = Depends(get_db)):
 
     onboarded_candidates = db.query(Candidate).filter(Candidate.status.in_(["onboarded", "completed"])).all()
     if onboarded_candidates:
-        from datetime import datetime
+        from datetime import datetime, timezone
         total_days = 0
         for c in onboarded_candidates:
-            delta = datetime.utcnow() - c.created_at
+            delta = datetime.now(timezone.utc) - c.created_at
             total_days += max(0.2, delta.total_seconds() / 86400.0)
         avg_days = total_days / len(onboarded_candidates)
         avg_time = f"{avg_days:.1f}d"

@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
 _db_path = Path(__file__).resolve().parent / "stitch_ats.db"
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_db_path.as_posix()}")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -41,7 +41,12 @@ def init_db():
             job_cols = {
                 "screening_questions": "TEXT",
                 "role_id": "VARCHAR",
-                "priority": "VARCHAR"
+                "priority": "VARCHAR",
+                "salary_range": "VARCHAR",
+                "location": "VARCHAR",
+                "work_mode": "VARCHAR",
+                "experience_level": "VARCHAR",
+                "is_published": "BOOLEAN"
             }
             altered_jobs = False
             for col_name, col_type in job_cols.items():
@@ -71,7 +76,10 @@ def init_db():
                 "client_readiness": "VARCHAR",
                 "red_flags": "TEXT",
                 "delivery_verdict": "VARCHAR",
-                "client_feedback": "VARCHAR"
+                "client_feedback": "VARCHAR",
+                "tech_rubric": "TEXT",
+                "offer_date": "DATETIME",
+                "joining_date": "DATETIME"
             }
             altered = False
             for col_name, col_type in candidate_cols.items():
@@ -88,7 +96,10 @@ def init_db():
                 "panel_type": "VARCHAR",
                 "brief_shared": "VARCHAR",
                 "verdict": "VARCHAR",
-                "verdict_notes": "TEXT"
+                "verdict_notes": "TEXT",
+                "google_event_id": "VARCHAR",
+                "google_meet_link": "VARCHAR",
+                "gcal_link": "VARCHAR"
             }
             altered_interviews = False
             for col_name, col_type in interview_cols.items():
@@ -96,6 +107,23 @@ def init_db():
                     conn.execute(text(f"ALTER TABLE interviews ADD COLUMN {col_name} {col_type}"))
                     altered_interviews = True
             if altered_interviews:
+                conn.commit()
+
+            # Check screenings table columns
+            res = conn.execute(text("PRAGMA table_info(screenings)"))
+            columns = [row[1] for row in res.fetchall()]
+            screening_cols = {
+                "score_justification": "TEXT",
+                "jd_vs_cv_score": "FLOAT",
+                "jd_vs_linkedin_score": "FLOAT",
+                "jd_vs_github_score": "FLOAT"
+            }
+            altered_screenings = False
+            for col_name, col_type in screening_cols.items():
+                if col_name not in columns:
+                    conn.execute(text(f"ALTER TABLE screenings ADD COLUMN {col_name} {col_type}"))
+                    altered_screenings = True
+            if altered_screenings:
                 conn.commit()
     except Exception as e:
         print(f"[DATABASE MIGRATION ERROR] Failed to apply column updates: {e}")
@@ -111,3 +139,27 @@ def seed_dashboard_data():
 
 
 
+
+from sqlalchemy import event
+from .tenant import current_company_id
+
+@event.listens_for(SessionLocal, "before_flush")
+def receive_before_flush(session, flush_context, instances):
+    company_id = current_company_id.get()
+    if company_id is None:
+        return
+    for obj in session.new:
+        if hasattr(obj, "company_id") and getattr(obj, "company_id") is None:
+            obj.company_id = company_id
+
+@event.listens_for(SessionLocal, "do_orm_execute")
+def _add_tenant_filter(execute_state):
+    company_id = current_company_id.get()
+    if company_id is None:
+        return
+    
+    if execute_state.is_select and not execute_state.is_column_load and not execute_state.is_relationship_load:
+        for cd in execute_state.statement.column_descriptions:
+            entity = cd.get("entity")
+            if entity and hasattr(entity, "company_id"):
+                execute_state.statement = execute_state.statement.filter(entity.company_id == company_id)

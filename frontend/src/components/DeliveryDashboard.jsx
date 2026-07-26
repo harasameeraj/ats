@@ -5,6 +5,7 @@ import WorkflowProgressionTracker from './WorkflowProgressionTracker'
 export default function DeliveryDashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
 
@@ -31,6 +32,7 @@ export default function DeliveryDashboard() {
     brief_shared: 'No'
   })
   const [submittingPanel, setSubmittingPanel] = useState(false)
+  const [allCandidates, setAllCandidates] = useState([])
 
   useEffect(() => {
     loadDashboard()
@@ -40,8 +42,11 @@ export default function DeliveryDashboard() {
     try {
       const res = await api.getDeliveryDashboard()
       setData(res)
+      const cands = await api.getCandidates()
+      setAllCandidates(cands)
     } catch (e) {
       console.error(e)
+      setError(e.message || 'Failed to load delivery dashboard data')
       showToast('Failed to load delivery dashboard data', 'error')
     } finally {
       setLoading(false)
@@ -119,13 +124,16 @@ export default function DeliveryDashboard() {
   }
 
   async function handleScanGithub(cand) {
+    if (!cand.github_url || !cand.github_url.trim()) {
+      showToast("Candidate does not have a GitHub profile URL.", "error")
+      return
+    }
     setScanningId(cand.id)
     try {
       const report = await api.scanGithub(cand.id, cand.github_url)
       setGithubReport(report)
-      const updatedUrl = cand.github_url || `https://github.com/${cand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
       setData(prev => {
-        const queue = prev.evaluation_queue.map(c => c.id === cand.id ? { ...c, github_url: updatedUrl } : c)
+        const queue = prev.evaluation_queue.map(c => c.id === cand.id ? { ...c, github_analysis: JSON.stringify(report) } : c)
         return { ...prev, evaluation_queue: queue }
       })
     } catch (e) {
@@ -136,13 +144,16 @@ export default function DeliveryDashboard() {
   }
 
   async function handleScanLinkedin(cand) {
+    if (!cand.linkedin_url || !cand.linkedin_url.trim()) {
+      showToast("Candidate does not have a LinkedIn profile URL.", "error")
+      return
+    }
     setScanningLinkedinId(cand.id)
     try {
       const report = await api.scanLinkedin(cand.id, cand.linkedin_url)
       setLinkedinReport(report)
-      const updatedUrl = cand.linkedin_url || `https://linkedin.com/in/${cand.name.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/\s+/g, '-')}`
       setData(prev => {
-        const queue = prev.evaluation_queue.map(c => c.id === cand.id ? { ...c, linkedin_url: updatedUrl } : c)
+        const queue = prev.evaluation_queue.map(c => c.id === cand.id ? { ...c, linkedin_analysis: JSON.stringify(report) } : c)
         return { ...prev, evaluation_queue: queue }
       })
     } catch (e) {
@@ -152,7 +163,63 @@ export default function DeliveryDashboard() {
     }
   }
 
+  const handleDownloadInterviews = () => {
+    const headers = ["Candidate Name", "Role", "Time", "Duration (mins)", "Interviewer", "Status"];
+    const rows = (data?.today_interviews || []).map(iv => {
+      const ivTime = new Date(iv.scheduled_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return [
+        iv.candidate_name,
+        iv.candidate_role,
+        ivTime,
+        iv.duration_mins,
+        iv.interviewer_name,
+        iv.status
+      ];
+    });
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `today_scheduled_interviews_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadJoining = () => {
+    const headers = ["Candidate Name", "Role", "Start Date", "Status"];
+    const rows = (data?.joining_this_week || []).map(c => [
+      c.name,
+      c.role,
+      c.joining_date,
+      c.status
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `candidates_joining_this_week_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (loading) return <div className="spinner"></div>
+  if (error || !data) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--t2)' }}>{error || 'No data available'}</div>
 
   const { kpis, funnel, evaluation_queue, interviews, joining_tracker, sla_governance, sla_breach_warning } = data
 
@@ -195,8 +262,11 @@ export default function DeliveryDashboard() {
         <button className={`tab-btn ${activeTab === 'panel' ? 'active' : ''}`} onClick={() => setActiveTab('panel')} style={tabStyle(activeTab === 'panel')}>
           🎙️ 2nd Round: Tech Panel Tracker
         </button>
+        <button className={`tab-btn ${activeTab === 'client' ? 'active' : ''}`} onClick={() => setActiveTab('client')} style={tabStyle(activeTab === 'client')}>
+          💼 3rd Round: Client Review
+        </button>
         <button className={`tab-btn ${activeTab === 'onboarding' ? 'active' : ''}`} onClick={() => setActiveTab('onboarding')} style={tabStyle(activeTab === 'onboarding')}>
-          🤝 4th Round: Onboarding Tracker
+          🤝 Onboarding Tracker
         </button>
       </div>
 
@@ -206,15 +276,7 @@ export default function DeliveryDashboard() {
       {activeTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Delivery KPIs */}
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-icon-wrap" style={{ background: 'var(--blue-bg)' }}>💼</div>
-              <div>
-                <div className="metric-label">Open Delivery Roles</div>
-                <div className="metric-value">{kpis.open_roles}</div>
-              </div>
-              <span className="metric-badge" style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>Demand</span>
-            </div>
+          <div className="metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
             <div className="metric-card">
               <div className="metric-icon-wrap" style={{ background: 'var(--orange-bg)' }}>⌛</div>
               <div>
@@ -231,25 +293,41 @@ export default function DeliveryDashboard() {
               </div>
               <span className="metric-badge" style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}>CV approval</span>
             </div>
-            <div className="metric-card">
-              <div className="metric-icon-wrap" style={{ background: 'var(--cyan-bg)' }}>🎤</div>
+            <div 
+              className="metric-card" 
+              style={{ cursor: 'pointer' }}
+              onClick={() => document.getElementById('todays-interviews-section')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              <div className="metric-icon-wrap" style={{ background: 'var(--orange-bg)' }}>📅</div>
               <div>
-                <div className="metric-label">Interview Conv.</div>
-                <div className="metric-value">{kpis.interview_conversion}</div>
+                <div className="metric-label">Today's Scheduled Interviews</div>
+                <div className="metric-value">{data.today_interviews ? data.today_interviews.length : 0}</div>
               </div>
-              <span className="metric-badge" style={{ background: 'var(--cyan-bg)', color: 'var(--cyan)' }}>Client Pass</span>
+              <span className="metric-badge" style={{ background: 'var(--orange-bg)', color: 'var(--orange)' }}>Today</span>
+            </div>
+            <div 
+              className="metric-card" 
+              style={{ cursor: 'pointer' }}
+              onClick={() => document.getElementById('joining-this-week-section')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              <div className="metric-icon-wrap" style={{ background: 'var(--blue-bg)' }}>🤝</div>
+              <div>
+                <div className="metric-label">Candidates Joining This Week</div>
+                <div className="metric-value">{data.joining_this_week ? data.joining_this_week.length : 0}</div>
+              </div>
+              <span className="metric-badge" style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>This Week</span>
             </div>
             <div className="metric-card">
-              <div className="metric-icon-wrap" style={{ background: 'var(--green-bg)' }}>🤝</div>
+              <div className="metric-icon-wrap" style={{ background: 'var(--red-bg)' }}>✉️</div>
               <div>
-                <div className="metric-label">Offer to Joining</div>
-                <div className="metric-value">{kpis.offer_joining}</div>
+                <div className="metric-label">Offers Pending</div>
+                <div className="metric-value">{kpis.offers_pending || 0}</div>
               </div>
-              <span className="metric-badge" style={{ background: 'var(--green-bg)', color: '#059669' }}>Delivery</span>
+              <span className="metric-badge" style={{ background: 'var(--red-bg)', color: 'var(--red)' }}>Offers</span>
             </div>
           </div>
 
-          <div className="two-col">
+          <div className="two-col" style={{ alignItems: 'flex-start' }}>
             {/* Visual Conversion Funnel */}
             <div className="card">
               <div className="card-title" style={{ marginBottom: '1.25rem' }}>Weekly Candidate Conversion Funnel</div>
@@ -328,7 +406,7 @@ export default function DeliveryDashboard() {
                       }}
                     >
                       <div>
-                        <strong style={{ fontSize: '0.85rem', color: 'var(--t1)', display: 'block' }}>{c.name}</strong>
+                        <strong className="cand-name" style={{ fontSize: '0.85rem', display: 'block' }} onClick={() => window.showCandidateTimeline(c.id)}>{c.name}</strong>
                         <span style={{ fontSize: '0.72rem', color: 'var(--t3)' }}>{c.role}</span>
                         <div style={{ fontSize: '0.68rem', color: 'var(--t3)', marginTop: '4px' }}>Offer: {c.offer_date} | Joining: {c.joining_date}</div>
                       </div>
@@ -346,6 +424,149 @@ export default function DeliveryDashboard() {
               </div>
             </div>
           </div>
+
+          <div className="two-col" style={{ marginTop: '1.5rem', alignItems: 'flex-start' }}>
+            {/* Today's Interviews Card */}
+            <div id="todays-interviews-section" className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📅</span> Today's Scheduled Interviews
+                  </div>
+                  <p className="card-sub" style={{ margin: 0 }}>Review all candidate panel discussions booked for today.</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {data.today_interviews && data.today_interviews.length > 5 && (
+                    <button 
+                      onClick={handleDownloadInterviews}
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '4px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      title="Download interviews list as Excel/CSV"
+                    >
+                      📥 Download Excel
+                    </button>
+                  )}
+                  <span className="status-badge status-confirmed" style={{ fontWeight: 'bold' }}>
+                    {data.today_interviews ? data.today_interviews.length : 0} Today
+                  </span>
+                </div>
+              </div>
+
+              {!data.today_interviews || data.today_interviews.length === 0 ? (
+                <div className="empty-state" style={{ padding: '2rem 1rem', background: 'var(--bg)', borderRadius: '10px' }}>
+                  <div className="empty-icon" style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>☕</div>
+                  <div className="empty-text" style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--t2)' }}>No interviews scheduled for today</div>
+                  <div className="empty-sub" style={{ fontSize: '0.75rem', color: 'var(--t3)' }}>Enjoy the quiet day, or schedule new ones from the Interviews page.</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {data.today_interviews.map(iv => {
+                    const ivTime = new Date(iv.scheduled_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    return (
+                      <div 
+                        key={iv.id} 
+                        style={{ 
+                          background: 'var(--bg)', 
+                          border: '1px solid var(--border)', 
+                          borderRadius: '10px', 
+                          padding: '1rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          transition: 'transform 0.2s'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--t1)' }}>{iv.candidate_name}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--t3)', marginTop: '2px' }}>{iv.candidate_role}</div>
+                          </div>
+                          <span className={`status-badge status-${iv.status}`} style={{ fontSize: '0.62rem' }}>
+                            {iv.status}
+                          </span>
+                        </div>
+                        
+                        <div style={{ borderTop: '1px dashed var(--border)', paddingTop: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.75rem', color: 'var(--t2)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>⏱️</span> <strong>{ivTime}</strong> ({iv.duration_mins} mins)
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>🎙️</span> Panel: {iv.interviewer_name}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Candidates Joining This Week Card */}
+            <div id="joining-this-week-section" className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>🤝</span> Candidates Joining This Week
+                  </div>
+                  <p className="card-sub" style={{ margin: 0 }}>Active offers scheduled to start work this week.</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {data.joining_this_week && data.joining_this_week.length > 5 && (
+                    <button 
+                      onClick={handleDownloadJoining}
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '4px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      title="Download joining candidates list as Excel/CSV"
+                    >
+                      📥 Download Excel
+                    </button>
+                  )}
+                  <span className="status-badge status-onboarded" style={{ fontWeight: 'bold' }}>
+                    {data.joining_this_week ? data.joining_this_week.length : 0} New Starts
+                  </span>
+                </div>
+              </div>
+
+              {!data.joining_this_week || data.joining_this_week.length === 0 ? (
+                <div className="empty-state" style={{ padding: '2rem 1rem', background: 'var(--bg)', borderRadius: '10px' }}>
+                  <div className="empty-icon" style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💼</div>
+                  <div className="empty-text" style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--t2)' }}>No joining scheduled this week</div>
+                  <div className="empty-sub" style={{ fontSize: '0.75rem', color: 'var(--t3)' }}>Check onboarding pipeline for future start dates.</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {data.joining_this_week.map(c => (
+                    <div 
+                      key={c.id} 
+                      style={{ 
+                        background: 'var(--bg)', 
+                        border: '1px solid var(--border)', 
+                        borderRadius: '10px', 
+                        padding: '0.85rem 1rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'transform 0.2s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+                    >
+                      <div>
+                        <strong className="cand-name" style={{ fontSize: '0.85rem' }} onClick={() => window.showCandidateTimeline(c.id)}>{c.name}</strong>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--t3)', marginTop: '2px' }}>{c.role}</div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--blue)', marginTop: '4px', fontWeight: 600 }}>Start Date: {c.joining_date}</div>
+                      </div>
+                      <span className="status-badge status-onboarded" style={{ fontSize: '0.62rem' }}>
+                        {c.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -353,7 +574,36 @@ export default function DeliveryDashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Quality Gate Review Queue */}
           <div className="card">
-            <div className="card-title">Quality Gate Evaluation Queue</div>
+            <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              Quality Gate Evaluation Queue
+              <button 
+                className="btn btn-outline btn-sm"
+                onClick={async () => {
+                  const evaluatedCands = evaluation_queue.filter(c => c.verdict !== 'NOT STARTED' || c.tech_fit !== 'TBC' || c.client_readiness !== 'TBC');
+                  if (evaluatedCands.length === 0) {
+                    showToast('No evaluated candidates to clear.', 'info');
+                    return;
+                  }
+                  if (!window.confirm(`Are you sure you want to clear ${evaluatedCands.length} evaluated candidates from this queue?`)) return;
+                  
+                  setLoading(true);
+                  try {
+                    for (const c of evaluatedCands) {
+                      const finalVerdict = c.verdict === 'NOT STARTED' || c.verdict === 'PENDING' ? 'APPROVED' : c.verdict;
+                      await api.updateCandidateVerdict(c.id, { delivery_verdict: finalVerdict });
+                    }
+                    showToast(`${evaluatedCands.length} candidates cleared successfully!`);
+                    loadDashboard();
+                  } catch(e) {
+                    showToast('Error clearing candidates', 'error');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                ✓ Clear Evaluated Candidates
+              </button>
+            </div>
             <p className="card-sub">Assess TA candidates, review their GitHub / LinkedIn scan reports, rate quality metrics, and approve/reject handoffs.</p>
 
             <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
@@ -381,7 +631,7 @@ export default function DeliveryDashboard() {
                       return (
                         <tr key={c.id}>
                           <td>
-                            <strong style={{ color: 'var(--t1)' }}>{c.name}</strong>
+                            <strong className="cand-name" onClick={() => window.showCandidateTimeline(c.id)}>{c.name}</strong>
                           </td>
                           <td>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', background: 'var(--bg)', padding: '2px 6px', borderRadius: '4px' }}>
@@ -488,29 +738,35 @@ export default function DeliveryDashboard() {
                                   </button>
                                   <button className="btn btn-outline btn-sm" onClick={() => setEditingId(null)}>Cancel</button>
                                 </>
-                              ) : (
+                              ) : c.ta_stage === 'Delivery_review' ? (
                                 <button className="btn btn-outline btn-sm" onClick={() => startEditGate(c)}>⚙️ Evaluate</button>
+                              ) : (
+                                <button className="btn btn-outline btn-sm" disabled style={{ opacity: 0.5, cursor: 'not-allowed' }} title="Awaiting Tech Panel handoff">⚙️ Evaluate</button>
                               )}
                               
-                              <button 
-                                className="btn btn-outline btn-sm" 
-                                onClick={() => handleScanGithub(c)}
-                                disabled={scanningId === c.id}
-                                style={{ fontSize: '0.68rem', padding: '4px 8px' }}
-                                title="Analyze candidate GitHub coding tenure"
-                              >
-                                {scanningId === c.id ? '...' : '🐙'} GH
-                              </button>
+                              {c.github_url && c.github_url.trim() !== "" && c.github_url.trim() !== "N/A" && (
+                                <button 
+                                  className="btn btn-outline btn-sm" 
+                                  onClick={() => handleScanGithub(c)}
+                                  disabled={scanningId === c.id}
+                                  style={{ fontSize: '0.68rem', padding: '4px 8px' }}
+                                  title="Analyze candidate GitHub coding tenure"
+                                >
+                                  {scanningId === c.id ? '...' : '🐙'} GH
+                                </button>
+                              )}
                               
-                              <button 
-                                className="btn btn-outline btn-sm" 
-                                onClick={() => handleScanLinkedin(c)}
-                                disabled={scanningLinkedinId === c.id}
-                                style={{ fontSize: '0.68rem', padding: '4px 8px', color: '#0a66c2', borderColor: 'rgba(10,102,194,0.2)' }}
-                                title="Analyze candidate LinkedIn job stability"
-                              >
-                                {scanningLinkedinId === c.id ? '...' : '🔗'} LI
-                              </button>
+                              {c.linkedin_url && c.linkedin_url.trim() !== "" && c.linkedin_url.trim() !== "N/A" && (
+                                <button 
+                                  className="btn btn-outline btn-sm" 
+                                  onClick={() => handleScanLinkedin(c)}
+                                  disabled={scanningLinkedinId === c.id}
+                                  style={{ fontSize: '0.68rem', padding: '4px 8px', color: '#0a66c2', borderColor: 'rgba(10,102,194,0.2)' }}
+                                  title="Analyze candidate LinkedIn job stability"
+                                >
+                                  {scanningLinkedinId === c.id ? '...' : '🔗'} LI
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -542,17 +798,15 @@ export default function DeliveryDashboard() {
                     <th>Date Scheduled</th>
                     <th>Technical Verdict</th>
                     <th>Panel Status</th>
-                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {interviews.length === 0 ? (
                     <tr>
-                      <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: 'var(--t3)' }}>No panel interviews scheduled yet. Book in the Interviews section first.</td>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--t3)' }}>No panel interviews scheduled yet. Book in the Interviews section first.</td>
                     </tr>
                   ) : (
                     interviews.map(iv => {
-                      const isPanelEditing = panelEditingId === iv.id
                       return (
                         <tr key={iv.id}>
                           <td><strong>{iv.candidate_name}</strong></td>
@@ -560,40 +814,26 @@ export default function DeliveryDashboard() {
                           
                           {/* Panel Type */}
                           <td>
-                            {isPanelEditing ? (
-                              <select 
-                                value={panelForm.panel_type}
-                                onChange={e => setPanelForm(prev => ({ ...prev, panel_type: e.target.value }))}
-                                style={{ padding: '4px', fontSize: '0.75rem', borderRadius: '4px' }}
-                              >
-                                <option value="Client-side tech lead">Client-side tech lead</option>
-                                <option value="Infosys SME">Infosys SME</option>
-                                <option value="Internal specialist">Internal specialist</option>
-                              </select>
-                            ) : (
-                              <span style={{ fontSize: '0.78rem', color: 'var(--t2)', fontWeight: 600 }}>{iv.panel_type}</span>
-                            )}
+                            <span style={{ fontSize: '0.78rem', color: 'var(--t2)', fontWeight: 600 }}>{iv.panel_type}</span>
                           </td>
-
+ 
                           {/* Brief Shared Toggle */}
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontSize: '0.78rem', color: iv.brief_shared.startsWith('Yes') ? '#10b981' : '#f59e0b', fontWeight: 'bold' }}>
                                 {iv.brief_shared}
                               </span>
-                              {!isPanelEditing && (
-                                <button 
-                                  className="btn btn-outline" 
-                                  onClick={() => handleToggleBrief(iv)}
-                                  style={{ padding: '2px 6px', fontSize: '0.62rem' }}
-                                  title="Toggle Brief status"
-                                >
-                                  🔄 Toggle
-                                </button>
-                              )}
+                              <button 
+                                className="btn btn-outline" 
+                                onClick={() => handleToggleBrief(iv)}
+                                style={{ padding: '2px 6px', fontSize: '0.62rem' }}
+                                title="Toggle Brief status"
+                              >
+                                🔄 Toggle
+                              </button>
                             </div>
                           </td>
-
+ 
                           {/* Date Scheduled */}
                           <td style={{ fontSize: '0.78rem', color: 'var(--t3)', fontFamily: 'var(--mono)' }}>{iv.date}</td>
                           
@@ -609,24 +849,10 @@ export default function DeliveryDashboard() {
                               {iv.verdict}
                             </span>
                           </td>
-
+ 
                           {/* Schedule status */}
                           <td>
-                            <span className={`status-badge status-${iv.status.toLowerCase()}`}>{iv.status}</span>
-                          </td>
-
-                          {/* Actions */}
-                          <td>
-                            {isPanelEditing ? (
-                              <div style={{ display: 'flex', gap: '4px' }}>
-                                <button className="btn btn-primary btn-sm" onClick={e => handleSavePanel(e, iv.id)} disabled={submittingPanel}>Save</button>
-                                <button className="btn btn-outline btn-sm" onClick={() => setPanelEditingId(null)}>Cancel</button>
-                              </div>
-                            ) : (
-                              <button className="btn btn-outline btn-sm" onClick={() => startEditPanel(iv)} style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
-                                📋 Assign Panel
-                              </button>
-                            )}
+                            <span className={`status-badge status-${(iv.status || '').toLowerCase()}`}>{iv.status}</span>
                           </td>
                         </tr>
                       )
@@ -641,10 +867,106 @@ export default function DeliveryDashboard() {
 
 
 
+      {activeTab === 'client' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="card">
+            <div className="card-title">3rd Round: Client Review Statuses</div>
+            <p className="card-sub">Monitor final client feedback, accepted/offered candidates, or talent pool rejections after passing technical quality gate.</p>
+
+            <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
+              <table className="results-table">
+                <thead>
+                  <tr>
+                    <th>Candidate Name</th>
+                    <th>Role Title</th>
+                    <th>Technical Verdict</th>
+                    <th>Client Review Stage</th>
+                    <th>Client Verdict Status</th>
+                    <th>Rejection Notes / Comments</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const clientCandidates = allCandidates.filter(c => 
+                      c.delivery_verdict === 'APPROVED' || 
+                      c.status === 'approved' || 
+                      c.status === 'hired' || 
+                      c.status === 'offered' || 
+                      c.status === 'onboarded' ||
+                      c.status === 'completed' ||
+                      (c.status === 'rejected' && c.delivery_verdict === 'APPROVED') ||
+                      (c.status === 'talent_pool' && c.delivery_verdict === 'APPROVED')
+                    )
+                    
+                    if (clientCandidates.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--t3)' }}>No candidates currently in Client Review.</td>
+                        </tr>
+                      )
+                    }
+
+                    return clientCandidates.map(c => {
+                      let clientVerdictLabel = "PENDING"
+                      let isAccepted = false
+                      let isRejected = false
+
+                      if (c.status === 'hired' || c.status === 'offered' || c.status === 'onboarded' || c.status === 'completed') {
+                        clientVerdictLabel = "ACCEPTED & OFFERED"
+                        isAccepted = true
+                      } else if (c.status === 'rejected' || c.status === 'talent_pool') {
+                        clientVerdictLabel = c.status === 'talent_pool' ? "TALENT POOL / DECLINED" : "REJECTED"
+                        isRejected = true
+                      }
+
+                      return (
+                        <tr key={c.id}>
+                          <td><strong>{c.name}</strong></td>
+                          <td style={{ fontSize: '0.78rem', color: 'var(--t2)' }}>{c.role}</td>
+                          <td>
+                            <span 
+                              className="status-badge"
+                              style={{ background: 'var(--green-bg)', color: '#059669' }}
+                            >
+                              {c.delivery_verdict || 'APPROVED'}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: 'var(--t2)', fontWeight: 600 }}>
+                            {isAccepted ? 'Moved to Onboarding' : isRejected ? 'Decision Complete' : 'Awaiting Client Interview / Review'}
+                          </td>
+                          <td>
+                            <span 
+                              className="status-badge"
+                              style={{ 
+                                background: isAccepted ? '#db2777' : isRejected ? '#ef4444' : '#f59e0b',
+                                color: '#ffffff',
+                                padding: '4px 8px',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              {clientVerdictLabel}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: 'var(--t3)', maxWidth: '280px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                            {isRejected ? (c.rejection_reason || 'Client Rejected candidate') : isAccepted ? 'Ready to hire' : 'Decision pending client response'}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
       {activeTab === 'onboarding' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card">
-            <div className="card-title">4th Round: HR & Onboarding Tracker</div>
+            <div className="card-title">HR & Onboarding Tracker</div>
             <p className="card-sub">Review offered candidates, projected start dates, onboarding access, and background compliance checks.</p>
 
             <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
@@ -667,7 +989,7 @@ export default function DeliveryDashboard() {
                   ) : (
                     joining_tracker.map(c => (
                       <tr key={c.id}>
-                        <td><strong>{c.name}</strong></td>
+                         <td><strong className="cand-name" onClick={() => window.showCandidateTimeline(c.id)}>{c.name}</strong></td>
                         <td style={{ fontSize: '0.8rem', color: 'var(--t2)' }}>{c.role}</td>
                         <td style={{ fontSize: '0.78rem', color: 'var(--t3)' }}>{c.offer_date}</td>
                         <td style={{ fontSize: '0.78rem', color: 'var(--t3)', fontWeight: 'bold' }}>{c.joining_date}</td>
@@ -756,8 +1078,8 @@ export default function DeliveryDashboard() {
                   <strong style={{ fontSize: '0.85rem', color: 'var(--t1)', display: 'block', marginBottom: '8px' }}>💻 Tech Match Cross-Reference</strong>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {githubReport.jd_tech_matches.map((tech, idx) => (
-                      <span key={idx} style={{ fontSize: '0.72rem', background: 'var(--green-bg)', color: '#059669', padding: '3px 8px', borderRadius: '100px', fontWeight: 600 }}>
-                        ✓ {tech}
+                      <span key={idx} style={{ fontSize: '0.72rem', background: 'var(--green-bg)', color: '#059669', padding: '3px 8px', borderRadius: '100px', fontWeight: 600 }} title={`${tech.project_name || 'Project'}: ${tech.relation || ''}`}>
+                        ✓ {tech.technology || tech}
                       </span>
                     ))}
                   </div>
@@ -778,6 +1100,11 @@ export default function DeliveryDashboard() {
           <div className="modal" style={{ maxWidth: '850px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '2.5rem', background: 'var(--white)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setLinkedinReport(null)}>×</button>
             
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.5rem', lineHeight: 1.4 }}>
+              <span style={{ fontSize: '1rem' }}>⚠️</span>
+              <span><strong>Demo Mode:</strong> LinkedIn profile data is currently being simulated by AI based on the candidate's Resume for demonstration purposes.</span>
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
               <img src={linkedinReport.user_info.avatar_url} alt={linkedinReport.user_info.name} style={{ width: '64px', height: '64px', borderRadius: '50%', border: '2px solid #0a66c2' }} />
               <div style={{ flex: 1 }}>
@@ -822,9 +1149,9 @@ export default function DeliveryDashboard() {
                             fontWeight: 'bold', 
                             padding: '2px 8px', 
                             borderRadius: '6px', 
-                            background: match.rating.toLowerCase().includes('strong') ? '#e6fbf3' : match.rating.toLowerCase().includes('partial') ? '#fffbeb' : '#fef2f2',
-                            color: match.rating.toLowerCase().includes('strong') ? '#10b981' : match.rating.toLowerCase().includes('partial') ? '#d97706' : '#ef4444',
-                            border: match.rating.toLowerCase().includes('strong') ? '1px solid #a7f3d0' : match.rating.toLowerCase().includes('partial') ? '1px solid #fde68a' : '1px solid #fca5a5'
+                            background: (match.rating || '').toLowerCase().includes('strong') ? '#e6fbf3' : (match.rating || '').toLowerCase().includes('partial') ? '#fffbeb' : '#fef2f2',
+                            color: (match.rating || '').toLowerCase().includes('strong') ? '#10b981' : (match.rating || '').toLowerCase().includes('partial') ? '#d97706' : '#ef4444',
+                            border: (match.rating || '').toLowerCase().includes('strong') ? '1px solid #a7f3d0' : (match.rating || '').toLowerCase().includes('partial') ? '1px solid #fde68a' : '1px solid #fca5a5'
                           }}>{match.rating}</span>
                         </div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--t2)' }}><strong>Matched Role:</strong> {match.matches_role}</div>

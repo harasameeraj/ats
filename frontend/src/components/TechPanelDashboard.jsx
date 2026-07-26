@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { api } from '../api/client'
+import { api, BASE_URL } from '../api/client'
 
 export default function TechPanelDashboard() {
   const [interviews, setInterviews] = useState([])
@@ -169,7 +169,7 @@ export default function TechPanelDashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {iv.resume_filename ? (
                           <a 
-                            href={`http://localhost:8000/uploads/cv_${iv.resume_filename}`} 
+                            href={`${BASE_URL}/uploads/cv_${iv.resume_filename}`} 
                             target="_blank" 
                             rel="noreferrer" 
                             style={{ fontSize: '0.74rem', color: 'var(--blue)', fontWeight: 'bold', textDecoration: 'none' }}
@@ -181,7 +181,7 @@ export default function TechPanelDashboard() {
                         )}
                         {iv.jd_filename ? (
                           <a 
-                            href={`http://localhost:8000/uploads/jd_${iv.jd_filename}`} 
+                            href={`${BASE_URL}/uploads/jd_${iv.jd_filename}`} 
                             target="_blank" 
                             rel="noreferrer" 
                             style={{ fontSize: '0.74rem', color: 'var(--purple)', fontWeight: 'bold', textDecoration: 'none' }}

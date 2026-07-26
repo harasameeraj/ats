@@ -22,21 +22,27 @@ def get_ai_client_and_model():
     openai_key = os.getenv("OPENAI_API_KEY")
     gemini_key = os.getenv("GEMINI_API_KEY")
 
+    import httpx
+    http_client = httpx.Client(verify=False)
+
     if groq_key and groq_key.strip():
         client = OpenAI(
             api_key=groq_key.strip(),
-            base_url="https://api.groq.com/openai/v1"
+            base_url="https://api.groq.com/openai/v1",
+            http_client=http_client
         )
         return client, "llama-3.3-70b-versatile", "groq"
     elif openai_key and openai_key.strip() and not openai_key.startswith("sk-" + "proj-" + "de5IUiFUBOI8xtN1FpiiDcGPY0c4f9107RXn-W_tP5WWl46BDWOjLWrtcoAK33NO_EU9ywR23IT3BlbkFJhZqFaQabubXCX3VDLyTaSRwADmQtthdt0HJ_BAA1eiFgDOoAnUICsd616P2fWjcoqnzmAcQgIA"):
         client = OpenAI(
-            api_key=openai_key.strip()
+            api_key=openai_key.strip(),
+            http_client=http_client
         )
         return client, "gpt-4o-mini", "openai"
     else:
         client = OpenAI(
             api_key=gemini_key.strip() if gemini_key else "",
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            http_client=http_client
         )
         return client, "gemini-2.5-flash", "gemini"
 
@@ -175,6 +181,8 @@ CANDIDATE RESPONSES:
 {qa_block}
 
 Grade each response out of 10 points. Calculate the final score out of 100.
+CRITICAL INSTRUCTION: If an answer is blank, gibberish, completely irrelevant, or ridiculously short (e.g., 's s s', 'none', 'idk', random characters), you MUST give it a score of exactly 0 points. Do not award pity points or partial credit for nonsense answers.
+
 If the final score is 60 or higher, the candidate passes ("status": "passed"). If the score is below 60, they fail ("status": "failed").
 
 Return a JSON object with exactly this format:

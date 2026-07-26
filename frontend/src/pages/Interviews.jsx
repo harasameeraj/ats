@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { api } from '../api/client'
+import { api, BASE_URL } from '../api/client'
 
 export default function Interviews() {
   const [interviews, setInterviews] = useState([])
@@ -36,6 +36,14 @@ export default function Interviews() {
   // Calendar view navigation and selection states
   const [viewDate, setViewDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(null)
+
+  // Rejection modal states
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [showPurgeConfirm, setShowPurgeConfirm] = useState(false)
+  const [candidateToReject, setCandidateToReject] = useState(null)
+  const [interviewToReject, setInterviewToReject] = useState(null)
+  const [rejectionReason, setRejectionReason] = useState('Technical Rejected')
+  const [rejectionNotes, setRejectionNotes] = useState('')
 
   // Form state
   const [form, setForm] = useState({
@@ -95,6 +103,36 @@ export default function Interviews() {
         date: formatDate(iv.scheduled_at),
         time: formatTime(iv.scheduled_at)
       })
+      setEmailModal(prev => ({
+        ...prev,
+        loading: false,
+        subject: draft.subject,
+        body: draft.body
+      }))
+    } catch (e) {
+      showToast(e.message, 'error')
+      setEmailModal(prev => ({ ...prev, isOpen: false, loading: false }))
+    }
+  }
+
+  async function handleOpenCandidateEmailModal(cand) {
+    const email = cand.email || `${cand.name.toLowerCase().replace(/\\s+/g, '')}@example.com`
+    
+    setEmailModal({
+      isOpen: true,
+      loading: true,
+      sending: false,
+      candidateId: cand.id,
+      candidateName: cand.name,
+      candidateEmail: email,
+      subject: '',
+      body: '',
+      type: 'invitation',
+      details: {}
+    })
+
+    try {
+      const draft = await api.generateEmail(cand.id, 'invitation', {})
       setEmailModal(prev => ({
         ...prev,
         loading: false,
@@ -197,19 +235,32 @@ export default function Interviews() {
     }
   }
 
-  async function handleDecision(id, action) {
+  async function handleSyncGcal(iv) {
     try {
-      await api.interviewAction(id, action)
-      showToast(`Candidate marked as ${action === 'hire' ? 'Hired' : 'Rejected'}!`)
+      const res = await api.syncInterviewToGCal(iv.id)
+      if (res.gcal_link) {
+        window.open(res.gcal_link, '_blank')
+        showToast('Google Calendar link generated!')
+      }
+      loadData()
+    } catch (e) {
+      showToast(e.message || 'Failed to sync to Google Calendar', 'error')
+    }
+  }
+
+  async function handleDecision(id, action, rejectionReason = null) {
+    try {
+      await api.interviewAction(id, action, rejectionReason)
+      showToast(`Candidate marked as ${action === 'hire' ? 'Approved for Client Review' : action === 'send_delivery' ? 'Handed off to Delivery' : 'Rejected'}!`)
       loadData()
     } catch (e) {
       showToast(e.message, 'error')
     }
   }
 
-  async function handleCandidateDecision(candidateId, action) {
+  async function handleCandidateDecision(candidateId, action, rejectionReason = null) {
     try {
-      await api.candidateAction(candidateId, action)
+      await api.candidateAction(candidateId, action, rejectionReason)
       showToast(action === 'hire' ? 'Candidate progressed to next step (Shortlisted)!' : 'Candidate marked as Rejected!')
       loadData()
     } catch (e) {
@@ -217,13 +268,68 @@ export default function Interviews() {
     }
   }
 
+  function handleTriggerCandidateReject(cand) {
+    setCandidateToReject(cand)
+    setInterviewToReject(null)
+    setRejectionReason('Technical Rejected')
+    setRejectionNotes('')
+    setShowRejectModal(true)
+  }
+
+  function handleTriggerInterviewReject(iv) {
+    setInterviewToReject(iv)
+    setCandidateToReject(null)
+    setRejectionReason('Technical Rejected')
+    setRejectionNotes('')
+    setShowRejectModal(true)
+  }
+
+  async function handleConfirmReject() {
+    try {
+      const fullReason = rejectionNotes.trim()
+        ? `${rejectionReason} — ${rejectionNotes.trim()}`
+        : rejectionReason
+      if (candidateToReject) {
+        await handleCandidateDecision(candidateToReject.id, 'reject', fullReason)
+      } else if (interviewToReject) {
+        await handleDecision(interviewToReject.id, 'reject', fullReason)
+      }
+      setShowRejectModal(false)
+      setCandidateToReject(null)
+      setInterviewToReject(null)
+    } catch (e) {
+      showToast(e.message || 'Failed to reject', 'error')
+    }
+  }
+
+  async function handleMoveToTalentPool() {
+    try {
+      const candId = candidateToReject ? candidateToReject.id : (interviewToReject ? interviewToReject.candidate_id : null)
+      if (!candId) return
+      const fullReason = rejectionNotes.trim()
+        ? `${rejectionReason} — ${rejectionNotes.trim()}`
+        : rejectionReason
+      await api.candidateAction(candId, 'talent_pool', fullReason)
+      showToast('Candidate successfully moved to Talent Pool!')
+      setShowRejectModal(false)
+      setCandidateToReject(null)
+      setInterviewToReject(null)
+      loadData()
+    } catch (e) {
+      showToast(e.message || 'Failed to move to Talent Pool', 'error')
+    }
+  }
+
   async function handleScanGithub(cand) {
+    if (!cand.github_url || !cand.github_url.trim()) {
+      showToast("Candidate does not have a GitHub profile URL.", "error")
+      return
+    }
     setScanningId(cand.id)
     try {
       const report = await api.scanGithub(cand.id, cand.github_url)
       setGithubReport(report)
-      const updatedUrl = cand.github_url || `https://github.com/${cand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
-      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_url: c.github_url || updatedUrl, github_analysis: JSON.stringify(report) } : c))
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, github_analysis: JSON.stringify(report) } : c))
     } catch (e) {
       showToast(e.message || "Failed to scan GitHub profile.", "error")
     } finally {
@@ -232,12 +338,15 @@ export default function Interviews() {
   }
 
   async function handleScanLinkedin(cand) {
+    if (!cand.linkedin_url || !cand.linkedin_url.trim()) {
+      showToast("Candidate does not have a LinkedIn profile URL.", "error")
+      return
+    }
     setScanningLinkedinId(cand.id)
     try {
       const report = await api.scanLinkedin(cand.id, cand.linkedin_url)
       setLinkedinReport(report)
-      const updatedUrl = cand.linkedin_url || `https://linkedin.com/in/${cand.name.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/\s+/g, '-')}`
-      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_url: c.linkedin_url || updatedUrl, linkedin_analysis: JSON.stringify(report) } : c))
+      setAllCandidates(prev => prev.map(c => c.id === cand.id ? { ...c, linkedin_analysis: JSON.stringify(report) } : c))
     } catch (e) {
       showToast(e.message || "Failed to scan LinkedIn profile.", "error")
     } finally {
@@ -246,19 +355,20 @@ export default function Interviews() {
   }
 
   function handleWatchVideo(candidateId, candidateName) {
-    const backendUrl = 'http://localhost:8000';
-    setVideoUrl(`${backendUrl}/uploads/recordings/${candidateId}_recording.webm`);
+    setVideoUrl(`${BASE_URL}/uploads/recordings/${candidateId}_recording.webm`);
     setVideoTitle(`Webcam Monitoring: ${candidateName}`);
     setShowVideoModal(true);
   }
 
   async function handlePurgeFailed() {
-    if (!window.confirm("Are you sure you want to permanently delete all candidates who failed (< 60% score) or violated the anti-cheating policy (>= 3 violations)?")) {
-      return
-    }
+    setShowPurgeConfirm(true)
+  }
+
+  async function confirmPurgeFailed() {
     try {
       const res = await api.purgeFailedCandidates()
       showToast(res.message || "Failed and violated candidates cleared successfully!")
+      setShowPurgeConfirm(false)
       loadData()
     } catch (e) {
       showToast(e.message || "Failed to purge candidates", 'error')
@@ -266,12 +376,16 @@ export default function Interviews() {
   }
 
   function formatDate(dateStr) {
-    const d = new Date(dateStr)
+    if (!dateStr) return '';
+    const localDateStr = dateStr.replace(/Z$|[+-]\d{2}:\d{2}$/, '');
+    const d = new Date(localDateStr)
     return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
   }
 
   function formatTime(dateStr) {
-    const d = new Date(dateStr)
+    if (!dateStr) return '';
+    const localDateStr = dateStr.replace(/Z$|[+-]\d{2}:\d{2}$/, '');
+    const d = new Date(localDateStr)
     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
   }
 
@@ -356,7 +470,7 @@ export default function Interviews() {
   // Filter interviews shown in the panel and inside cell dots (hide already decided hires/rejections)
   const activeInterviews = interviews.filter(iv => 
     iv.status !== 'cancelled' && 
-    !['hired', 'offered', 'onboarded', 'completed', 'rejected'].includes(iv.candidate_status)
+    !['hired', 'offered', 'onboarded', 'completed', 'rejected', 'delivery_review', 'approved', 'talent_pool'].includes(iv.candidate_status)
   )
 
   const testCandidates = allCandidates.filter(c => {
@@ -565,7 +679,7 @@ export default function Interviews() {
                     <div className="iv-time">{formatTime(iv.scheduled_at).split(' ')[0]}</div>
                     <div className="iv-info">
                       <div className="iv-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        {iv.candidate_name}
+                        <span className="cand-name" onClick={() => window.showCandidateTimeline(iv.candidate_id)}>{iv.candidate_name}</span>
                         {iv.assessment_status === 'passed' && (
                           <span style={{ background: '#e6fbf3', color: '#10b981', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
                             Passed ({iv.assessment_score}%)
@@ -614,21 +728,27 @@ export default function Interviews() {
                         <>
                           <button className="btn btn-sm btn-outline" onClick={() => handleStatusChange(iv.id, 'confirmed')}>Confirm</button>
                           <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleOpenEmailModal(iv)}>✉ Draft Invite</button>
+                          {iv.gcal_link && <a href={iv.gcal_link} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#eef2ff', borderColor: '#818cf8', color: '#4f46e5', textDecoration: 'none' }}>📅 Add to Calendar</a>}
+                          {iv.google_meet_link && <a href={iv.google_meet_link} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#dcfce7', borderColor: '#4ade80', color: '#16a34a', textDecoration: 'none' }}>📹 Google Meet</a>}
                           <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleStatusChange(iv.id, 'cancelled')}>Cancel</button>
                         </>
                       )}
                       {iv.status === 'confirmed' && (
                         <>
-                          <button className="btn btn-sm btn-outline" onClick={() => handleStatusChange(iv.id, 'completed')}>Complete</button>
                           <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => handleOpenEmailModal(iv)}>✉ Draft Invite</button>
+                          {iv.gcal_link && <a href={iv.gcal_link} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#eef2ff', borderColor: '#818cf8', color: '#4f46e5', textDecoration: 'none' }}>📅 Add to Calendar</a>}
+                          {iv.google_meet_link && <a href={iv.google_meet_link} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#dcfce7', borderColor: '#4ade80', color: '#16a34a', textDecoration: 'none' }}>📹 Google Meet</a>}
                           <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleStatusChange(iv.id, 'cancelled')}>Cancel</button>
                         </>
                       )}
                       {iv.status === 'completed' && (
                         <div style={{ display: 'flex', gap: '.25rem', marginTop: '.25rem' }}>
-                          <button className="btn btn-sm btn-success" onClick={() => handleDecision(iv.id, 'hire')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Hire</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => handleDecision(iv.id, 'reject')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Reject</button>
+                          <button className="btn btn-sm btn-success" onClick={() => handleDecision(iv.id, 'send_delivery')} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Hand off to Delivery</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleTriggerInterviewReject(iv)} style={{ padding: '.25rem .5rem', fontSize: '.68rem' }}>Reject</button>
                         </div>
+                      )}
+                      {!iv.gcal_link && iv.status !== 'cancelled' && (
+                        <button className="btn btn-sm btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '.25rem', borderColor: '#818cf8', color: '#4f46e5', fontSize: '.68rem' }} onClick={() => handleSyncGcal(iv)}>📅 Sync to Calendar</button>
                       )}
                     </div>
                   </div>
@@ -643,7 +763,7 @@ export default function Interviews() {
                     </div>
                     <div className="iv-info">
                       <div className="iv-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        {cand.name}
+                        <span className="cand-name" onClick={() => window.showCandidateTimeline(cand.id)}>{cand.name}</span>
                         {cand.assessment_violations >= 3 ? (
                           <span style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 'bold' }}>
                             Violated (⚠️ {cand.assessment_violations} Violations)
@@ -681,71 +801,75 @@ export default function Interviews() {
                         }
                       </div>
                       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
-                        <button
-                          className="btn btn-sm btn-outline"
-                          onClick={() => handleScanGithub(cand)}
-                          disabled={scanningId === cand.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            borderColor: '#333',
-                            color: '#333',
-                            fontSize: '0.68rem',
-                            padding: '3px 8px',
-                            fontWeight: 'bold',
-                            background: '#f8fafc',
-                            width: 'fit-content'
-                          }}
-                          title="Scan candidate's public GitHub profile"
-                        >
-                          {scanningId === cand.id ? (
-                            <>
-                              <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(0,0,0,0.1)', borderTopColor: '#333', margin: '0 4px 0 0' }}></div>
-                              Scanning...
-                            </>
-                          ) : (
-                            <>
-                              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
-                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-                              </svg>
-                              Scan GitHub
-                            </>
-                          )}
-                        </button>
+                        {cand.github_url && cand.github_url.trim() !== "" && cand.github_url.trim() !== "N/A" && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleScanGithub(cand)}
+                            disabled={scanningId === cand.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              borderColor: '#333',
+                              color: '#333',
+                              fontSize: '0.68rem',
+                              padding: '3px 8px',
+                              fontWeight: 'bold',
+                              background: '#f8fafc',
+                              width: 'fit-content'
+                            }}
+                            title="Scan candidate's public GitHub profile"
+                          >
+                            {scanningId === cand.id ? (
+                              <>
+                                <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(0,0,0,0.1)', borderTopColor: '#333', margin: '0 4px 0 0' }}></div>
+                                Scanning...
+                              </>
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                                </svg>
+                                Scan GitHub
+                              </>
+                            )}
+                          </button>
+                        )}
 
-                        <button
-                          className="btn btn-sm btn-outline"
-                          onClick={() => handleScanLinkedin(cand)}
-                          disabled={scanningLinkedinId === cand.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            borderColor: '#0a66c2',
-                            color: '#0a66c2',
-                            fontSize: '0.68rem',
-                            padding: '3px 8px',
-                            fontWeight: 'bold',
-                            background: '#f8fafc',
-                            width: 'fit-content'
-                          }}
-                          title="Scan candidate's LinkedIn profile"
-                        >
-                          {scanningLinkedinId === cand.id ? (
-                            <>
-                              <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(10,102,194,0.1)', borderTopColor: '#0a66c2', margin: '0 4px 0 0' }}></div>
-                              Scanning...
-                            </>
-                          ) : (
-                            <>
-                              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
-                                <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764.784 1.764 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                              </svg>
-                              Scan LinkedIn
-                            </>
-                          )}
-                        </button>
+                        {cand.linkedin_url && cand.linkedin_url.trim() !== "" && cand.linkedin_url.trim() !== "N/A" && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleScanLinkedin(cand)}
+                            disabled={scanningLinkedinId === cand.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              borderColor: '#0a66c2',
+                              color: '#0a66c2',
+                              fontSize: '0.68rem',
+                              padding: '3px 8px',
+                              fontWeight: 'bold',
+                              background: '#f8fafc',
+                              width: 'fit-content'
+                            }}
+                            title="Scan candidate's LinkedIn profile"
+                          >
+                            {scanningLinkedinId === cand.id ? (
+                              <>
+                                <div className="spinner" style={{ width: '10px', height: '10px', display: 'inline-block', border: '2px solid rgba(10,102,194,0.1)', borderTopColor: '#0a66c2', margin: '0 4px 0 0' }}></div>
+                                Scanning...
+                              </>
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+                                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764.784 1.764 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                                </svg>
+                                Scan LinkedIn
+                              </>
+                            )}
+                          </button>
+                        )}
 
                         {cand.assessment_status && cand.assessment_status !== 'pending' && (
                           <button
@@ -771,26 +895,48 @@ export default function Interviews() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem', minWidth: '110px' }}>
                       {cand.assessment_status === 'pending' && (
-                        <span className="status-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting Take</span>
+                        <div style={{ display: 'flex', gap: '.25rem', alignItems: 'center' }}>
+                          <span className="status-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting Take</span>
+                          <button className="btn btn-sm btn-outline" style={{ fontSize: '.65rem', padding: '.2rem .4rem' }} onClick={() => {
+                            setForm(f => ({
+                              ...f,
+                              candidate_id: cand.id.toString(),
+                              interviewer_name: 'Hiring Manager'
+                            }))
+                            setShowModal(true)
+                          }}>
+                            📅 Skip AI & Schedule
+                          </button>
+                        </div>
                       )}
                       
-                      {cand.status === 'shortlisted' && (
+                      {cand.status === 'shortlisted' && cand.assessment_status !== 'pending' && (
                         <>
-                          <button 
-                            className="btn btn-sm btn-primary" 
-                            onClick={() => {
-                              setForm(f => ({
-                                ...f,
-                                candidate_id: cand.id.toString(),
-                                interviewer_name: 'Hiring Manager'
-                              }))
-                              setShowModal(true)
-                            }}
-                          >
-                            📅 Schedule
-                          </button>
-                          <div style={{ display: 'flex', gap: '.2rem', marginTop: '.1rem' }}>
-                            <button className="btn btn-sm btn-danger" onClick={() => handleCandidateDecision(cand.id, 'reject')} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Reject</button>
+                          <div style={{ display: 'flex', gap: '.25rem' }}>
+                            <button 
+                              className="btn btn-sm btn-primary" 
+                              style={{ flex: 1 }}
+                              onClick={() => {
+                                setForm(f => ({
+                                  ...f,
+                                  candidate_id: cand.id.toString(),
+                                  interviewer_name: 'Hiring Manager'
+                                }))
+                                setShowModal(true)
+                              }}
+                            >
+                              📅 Schedule
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-outline"
+                              style={{ flex: 1 }}
+                              onClick={() => handleOpenCandidateEmailModal(cand)}
+                            >
+                              ✉ Send Email
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: '.2rem', marginTop: '.25rem' }}>
+                            <button className="btn btn-sm btn-danger" onClick={() => handleTriggerCandidateReject(cand)} style={{ padding: '.25rem .5rem', fontSize: '.65rem', flex: 1 }}>Reject</button>
                           </div>
                         </>
                       )}
@@ -1344,6 +1490,78 @@ export default function Interviews() {
             
             <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setLinkedinReport(null)}>Close Analysis</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REJECTION REASON MODAL */}
+      {showRejectModal && (candidateToReject || interviewToReject) && (
+        <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <button className="modal-close" onClick={() => setShowRejectModal(false)}>×</button>
+            <div className="modal-title">Reject Candidate</div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--t2)', marginBottom: '1.25rem' }}>
+              Select a rejection reason for <strong>{candidateToReject ? candidateToReject.name : interviewToReject.candidate_name}</strong>:
+            </p>
+            
+            <div className="form-group">
+              <label className="form-label">Rejection Reason</label>
+              <select 
+                className="form-input form-select"
+                value={rejectionReason}
+                onChange={e => setRejectionReason(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)' }}
+              >
+                <option value="Technical Rejected">Technical Rejected</option>
+                <option value="Salary Mismatch">Salary Mismatch</option>
+                <option value="Position Closed">Position Closed</option>
+                <option value="Keep for Future Opportunities">Keep for Future Opportunities</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '1rem' }}>
+              <label className="form-label">Additional Recruiter Notes <span style={{ color: 'var(--t3)', fontWeight: 400 }}>(optional)</span></label>
+              <textarea
+                className="form-input"
+                value={rejectionNotes}
+                onChange={e => setRejectionNotes(e.target.value)}
+                placeholder="Add any additional context, feedback, or notes for future reference..."
+                rows={3}
+                style={{ width: '100%', resize: 'vertical', fontSize: '0.8rem', lineHeight: 1.5 }}
+              />
+              <div style={{ fontSize: '0.68rem', color: 'var(--t3)', marginTop: '4px' }}>These notes will be saved alongside the rejection reason and are viewable in the candidate's profile.</div>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-outline" onClick={() => setShowRejectModal(false)}>Cancel</button>
+              <button 
+                className="btn btn-primary" 
+                style={{ background: 'var(--purple)', borderColor: 'var(--purple)' }} 
+                onClick={handleMoveToTalentPool}
+              >
+                📂 Move to Talent Pool
+              </button>
+              <button className="btn btn-danger" onClick={handleConfirmReject}>Confirm Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purge Confirmation Modal */}
+      {showPurgeConfirm && (
+        <div className="modal-overlay" onClick={() => setShowPurgeConfirm(false)}>
+          <div className="modal" style={{ maxWidth: '450px', textAlign: 'center', padding: '2.5rem' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: '64px', height: '64px', background: '#fef2f2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+              <span style={{ fontSize: '2rem' }}>⚠️</span>
+            </div>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.75rem' }}>Clear Failed Candidates?</h2>
+            <p style={{ color: 'var(--t2)', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+              Are you sure you want to permanently delete all candidates who failed (&lt; 60% score) or violated the anti-cheating policy (&ge; 3 violations)? This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowPurgeConfirm(false)}>Cancel</button>
+              <button className="btn btn-outline" style={{ color: '#ef4444', borderColor: '#fca5a5', background: '#fef2f2' }} onClick={confirmPurgeFailed}>Yes, Clear All</button>
             </div>
           </div>
         </div>

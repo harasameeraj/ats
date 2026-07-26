@@ -21,3 +21,13 @@ frontend/.env*
 # System
 .DS_Store
 Thumbs.db
+.venv/
+venv/
+node_modules/
+*.db
+*.sqlite
+*.sqlite3
+*.html
+*.png
+*.js
+*.bat

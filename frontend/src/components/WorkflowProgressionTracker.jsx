@@ -30,10 +30,10 @@ export default function WorkflowProgressionTracker({ selectedStage, onStageSelec
   }, [])
 
   // Calculate counts dynamically
-  const screeningCount = candidates.filter(c => c.status !== 'rejected' && ['uploaded', 'screened'].includes(c.status.toLowerCase())).length
-  const techCount = candidates.filter(c => c.status !== 'rejected' && ['shortlisted', 'interviewed'].includes(c.status.toLowerCase()) && c.delivery_verdict !== 'APPROVED' && c.delivery_verdict !== 'REJECTED').length
-  const clientCount = candidates.filter(c => c.status !== 'rejected' && c.delivery_verdict === 'APPROVED' && !['hired', 'offered', 'onboarded', 'completed'].includes(c.status.toLowerCase())).length
-  const onboardingCount = candidates.filter(c => c.status !== 'rejected' && ['hired', 'offered', 'onboarded', 'completed'].includes(c.status.toLowerCase())).length
+  const screeningCount = candidates.filter(c => !['rejected', 'talent_pool'].includes(c.status.toLowerCase()) && ['uploaded', 'screened'].includes(c.status.toLowerCase())).length
+  const techCount = candidates.filter(c => !['rejected', 'talent_pool'].includes(c.status.toLowerCase()) && ['shortlisted', 'interviewed'].includes(c.status.toLowerCase()) && c.delivery_verdict !== 'APPROVED' && c.delivery_verdict !== 'REJECTED').length
+  const clientCount = candidates.filter(c => !['rejected', 'talent_pool'].includes(c.status.toLowerCase()) && c.delivery_verdict === 'APPROVED' && !['hired', 'offered', 'onboarded', 'completed'].includes(c.status.toLowerCase())).length
+  const onboardingCount = candidates.filter(c => !['rejected', 'talent_pool'].includes(c.status.toLowerCase()) && ['hired', 'offered', 'onboarded', 'completed'].includes(c.status.toLowerCase())).length
 
   const stages = [
     {

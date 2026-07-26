@@ -240,7 +240,7 @@ export default function Onboarding() {
                     <div className="ob-avatar" style={{ background: getAvatarColor(ob.name) }}>{ob.name.charAt(0)}</div>
                     <div style={{ flex: 1 }}>
                       <div className="ob-name" style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
-                        {ob.name}
+                        <span className="cand-name" onClick={() => window.showCandidateTimeline(ob.id)}>{ob.name}</span>
                         <button 
                           className="btn btn-xs btn-outline" 
                           style={{ padding: '.15rem .45rem', fontSize: '.68rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }} 
@@ -324,17 +324,10 @@ export default function Onboarding() {
                   <div className="pipe-num">{String(stats.to_do_today).padStart(2, '0')}</div>
                   <div className="pipe-lbl">Pending Tasks</div>
                 </div>
-                <div className="pipe-stat">
-                  <div className="pipe-num" style={{ color: '#34d399' }}>{String(stats.completed).padStart(2, '0')}</div>
-                  <div className="pipe-lbl">Completed</div>
-                </div>
+
                 <div className="pipe-stat">
                   <div className="pipe-num" style={{ color: '#f87171' }}>{String(stats.blocked).padStart(2, '0')}</div>
                   <div className="pipe-lbl">Blocked</div>
-                </div>
-                <div className="pipe-stat">
-                  <div className="pipe-num" style={{ color: '#a855f7' }}>{stats.avg_time}</div>
-                  <div className="pipe-lbl">Avg Time</div>
                 </div>
               </div>
             </div>

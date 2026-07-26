@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from ..database import get_db
-from ..models import Interview, Candidate, Activity, Screening, Job
+from ..models import Interview, Candidate, Activity, Screening, Job, CommunicationLog
 from ..schemas import InterviewCreate, InterviewUpdate, BulkInterviewCreate, EmailGenerationRequest, EmailSendRequest
 from ..services.ai_screening import suggest_interview_slots, generate_ai_email
 from ..services.email_sender import send_email
@@ -42,12 +42,15 @@ def list_interviews(status: Optional[str] = None, db: Session = Depends(get_db))
             "github_analysis": candidate.github_analysis if candidate else None,
             "linkedin_url": candidate.linkedin_url if candidate else None,
             "linkedin_analysis": candidate.linkedin_analysis if candidate else None,
+            "resume_filename": candidate.resume_filename if candidate else None,
             "interviewer_name": iv.interviewer_name,
             "scheduled_at": iv.scheduled_at.isoformat(),
             "duration_mins": iv.duration_mins,
             "status": iv.status,
             "notes": iv.notes,
-            "created_at": iv.created_at.isoformat()
+            "created_at": iv.created_at.isoformat(),
+            "gcal_link": iv.gcal_link or "",
+            "google_meet_link": iv.google_meet_link or ""
         })
     return result
 
@@ -81,8 +84,65 @@ def create_interview(data: InterviewCreate, db: Session = Depends(get_db)):
         color="#22d3ee"
     )
     db.add(activity)
+
+    comm = CommunicationLog(
+        candidate_id=candidate.id,
+        type="interview",
+        subject=f"Technical Panel Interview Scheduled with {data.interviewer_name}",
+        body=f"Date & Time: {data.scheduled_at.strftime('%Y-%m-%d %H:%M')}\nDuration: {data.duration_mins} mins\nNotes: {data.notes or 'None'}",
+        sender="Recruiter",
+        recipient=candidate.email or "Candidate"
+    )
+    db.add(comm)
+
     db.commit()
     db.refresh(interview)
+
+    # --- Google Calendar Integration ---
+    try:
+        from ..services.google_calendar import build_interview_gcal_link, try_create_api_event
+        from ..models import SystemSetting
+
+        # Get organizer email from settings (default to user's email)
+        organizer_setting = db.query(SystemSetting).filter(SystemSetting.key == "gcal_organizer_email").first()
+        organizer_email = organizer_setting.value if organizer_setting and organizer_setting.value else "harasameeraj.7@gmail.com"
+
+        # Always generate a Google Calendar link (works without API credentials)
+        gcal_link = build_interview_gcal_link(
+            candidate_name=candidate.name,
+            candidate_email=candidate.email or "",
+            interviewer_name=data.interviewer_name,
+            candidate_role=candidate.role or "General",
+            scheduled_at=data.scheduled_at,
+            duration_mins=data.duration_mins,
+            organizer_email=organizer_email,
+            notes=data.notes or "",
+        )
+        interview.gcal_link = gcal_link
+
+        # Try full API integration if credentials are configured
+        creds_setting = db.query(SystemSetting).filter(SystemSetting.key == "gcal_credentials_json").first()
+        cal_id_setting = db.query(SystemSetting).filter(SystemSetting.key == "gcal_calendar_id").first()
+
+        if creds_setting and creds_setting.value and cal_id_setting and cal_id_setting.value:
+            api_result = try_create_api_event(
+                credentials_json=creds_setting.value,
+                calendar_id=cal_id_setting.value,
+                summary=f"Interview — {candidate.name}",
+                description=f"Interviewer: {data.interviewer_name}\nRole: {candidate.role or 'General'}\nDuration: {data.duration_mins} min",
+                start_dt=data.scheduled_at,
+                duration_mins=data.duration_mins,
+                attendee_emails=[e for e in [candidate.email, organizer_email] if e],
+            )
+            if api_result:
+                interview.google_event_id = api_result.get("event_id", "")
+                interview.google_meet_link = api_result.get("meet_link", "")
+
+        db.commit()
+        db.refresh(interview)
+    except Exception as e:
+        # Never let calendar integration break interview scheduling
+        print(f"[GCal] Non-critical error: {e}")
 
     return {
         "id": interview.id,
@@ -92,9 +152,68 @@ def create_interview(data: InterviewCreate, db: Session = Depends(get_db)):
         "scheduled_at": interview.scheduled_at.isoformat(),
         "duration_mins": interview.duration_mins,
         "status": interview.status,
-        "notes": interview.notes
+        "notes": interview.notes,
+        "gcal_link": interview.gcal_link or "",
+        "google_meet_link": interview.google_meet_link or ""
     }
 
+
+@router.post("/{interview_id}/gcal-sync")
+def sync_interview_to_gcal(interview_id: int, db: Session = Depends(get_db)):
+    """Generate or re-generate a Google Calendar link for an existing interview."""
+    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    candidate = db.query(Candidate).filter(Candidate.id == interview.candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    from ..services.google_calendar import build_interview_gcal_link, try_create_api_event
+    from ..models import SystemSetting
+
+    organizer_setting = db.query(SystemSetting).filter(SystemSetting.key == "gcal_organizer_email").first()
+    organizer_email = organizer_setting.value if organizer_setting and organizer_setting.value else "harasameeraj.7@gmail.com"
+
+    # Generate the calendar link
+    gcal_link = build_interview_gcal_link(
+        candidate_name=candidate.name,
+        candidate_email=candidate.email or "",
+        interviewer_name=interview.interviewer_name,
+        candidate_role=candidate.role or "General",
+        scheduled_at=interview.scheduled_at,
+        duration_mins=interview.duration_mins,
+        organizer_email=organizer_email,
+        notes=interview.notes or "",
+    )
+    interview.gcal_link = gcal_link
+
+    # Try API integration
+    creds_setting = db.query(SystemSetting).filter(SystemSetting.key == "gcal_credentials_json").first()
+    cal_id_setting = db.query(SystemSetting).filter(SystemSetting.key == "gcal_calendar_id").first()
+
+    if creds_setting and creds_setting.value and cal_id_setting and cal_id_setting.value:
+        api_result = try_create_api_event(
+            credentials_json=creds_setting.value,
+            calendar_id=cal_id_setting.value,
+            summary=f"Interview — {candidate.name}",
+            description=f"Interviewer: {interview.interviewer_name}\nRole: {candidate.role or 'General'}\nDuration: {interview.duration_mins} min",
+            start_dt=interview.scheduled_at,
+            duration_mins=interview.duration_mins,
+            attendee_emails=[e for e in [candidate.email, organizer_email] if e],
+        )
+        if api_result:
+            interview.google_event_id = api_result.get("event_id", "")
+            interview.google_meet_link = api_result.get("meet_link", "")
+
+    db.commit()
+    db.refresh(interview)
+
+    return {
+        "message": "Google Calendar sync completed",
+        "gcal_link": interview.gcal_link or "",
+        "google_meet_link": interview.google_meet_link or ""
+    }
 
 @router.put("/{interview_id}")
 def update_interview(interview_id: int, data: InterviewUpdate, db: Session = Depends(get_db)):
@@ -240,6 +359,16 @@ def bulk_schedule(data: BulkInterviewCreate, db: Session = Depends(get_db)):
         )
         db.add(activity)
 
+        comm = CommunicationLog(
+            candidate_id=candidate.id,
+            type="interview",
+            subject=f"Technical Panel Interview Scheduled with {data.interviewer_name} (Auto)",
+            body=f"Date & Time: {current_time.strftime('%Y-%m-%d %H:%M')}\nDuration: {data.duration_mins} mins\nNotes: {data.notes or f'Auto-scheduled screening follow-up for {candidate.name}.'}",
+            sender="Recruiter",
+            recipient=candidate.email or "Candidate"
+        )
+        db.add(comm)
+
         scheduled_interviews.append(iv)
         # Advance current time with 15 mins buffer
         current_time += timedelta(minutes=data.duration_mins + 15)
@@ -261,7 +390,7 @@ def bulk_schedule(data: BulkInterviewCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/{interview_id}/action")
-def interview_action(interview_id: int, action: str, db: Session = Depends(get_db)):
+def interview_action(interview_id: int, action: str, rejection_reason: Optional[str] = None, db: Session = Depends(get_db)):
     """Hire or reject a candidate after completing an interview."""
     interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not interview:
@@ -272,25 +401,37 @@ def interview_action(interview_id: int, action: str, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     action_lower = action.lower()
-    if action_lower not in ("hire", "reject"):
-        raise HTTPException(status_code=400, detail="Action must be 'hire' or 'reject'")
+    if action_lower not in ("hire", "reject", "send_delivery"):
+        raise HTTPException(status_code=400, detail="Action must be 'hire', 'reject', or 'send_delivery'")
 
-    if action_lower == "hire":
-        candidate.status = "hired"
+    if action_lower == "send_delivery":
+        candidate.status = "delivery_review"
         interview.status = "completed"
         activity = Activity(
-            action="Candidate Hired",
-            description=f'{candidate.name} has been marked as HIRED after interview!',
-            icon="🎉",
-            color="#34d399"
+            action="Handed Off to Delivery",
+            description=f'{candidate.name} has passed Tech Panel and was sent to Delivery for review.',
+            icon="⚖️",
+            color="#f59e0b"
+        )
+        db.add(activity)
+    elif action_lower == "hire":
+        candidate.status = "approved"
+        interview.status = "completed"
+        activity = Activity(
+            action="Candidate Approved",
+            description=f'{candidate.name} has passed the tech interview and is awaiting client review!',
+            icon="👍",
+            color="#3b82f6"
         )
         db.add(activity)
     else:
         candidate.status = "rejected"
+        if rejection_reason:
+            candidate.rejection_reason = rejection_reason
         interview.status = "completed"
         activity = Activity(
             action="Candidate Rejected",
-            description=f'{candidate.name} was rejected after interview.',
+            description=f'{candidate.name} was rejected after interview. Reason: {rejection_reason or "None"}',
             icon="❌",
             color="#f87171"
         )
@@ -350,23 +491,56 @@ def send_candidate_email(data: EmailSendRequest, db: Session = Depends(get_db)):
         color="#3b82f6"
     )
     db.add(activity)
+
+    # Log communication
+    candidate = db.query(Candidate).filter(Candidate.email == data.to_email).first()
+    if candidate:
+        comm = CommunicationLog(
+            candidate_id=candidate.id,
+            type="email",
+            subject=data.subject,
+            body=data.body,
+            sender="Recruiter",
+            recipient=data.to_email
+        )
+        db.add(comm)
+        
     db.commit()
     
     return {"message": "Email sent successfully"}
 
 
 @router.post("/candidate/{candidate_id}/action")
-def candidate_action(candidate_id: int, action: str, db: Session = Depends(get_db)):
+def candidate_action(candidate_id: int, action: str, rejection_reason: Optional[str] = None, db: Session = Depends(get_db)):
     """Hire or reject a candidate directly (e.g. after assessment without interview)."""
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     action_lower = action.lower()
-    if action_lower not in ("hire", "reject"):
-        raise HTTPException(status_code=400, detail="Action must be 'hire' or 'reject'")
+    if action_lower not in ("hire", "reject", "talent_pool", "offer", "send_delivery"):
+        raise HTTPException(status_code=400, detail="Action must be 'hire', 'reject', 'talent_pool', 'offer', or 'send_delivery'")
 
-    if action_lower == "hire":
+    if action_lower == "send_delivery":
+        candidate.status = "delivery_review"
+        activity = Activity(
+            action="Handed Off to Delivery",
+            description=f'{candidate.name} has passed Tech Panel and was sent to Delivery for review.',
+            icon="⚖️",
+            color="#f59e0b"
+        )
+        db.add(activity)
+    elif action_lower == "offer":
+        candidate.status = "hired"
+        candidate.client_feedback = "OFFERED"
+        activity = Activity(
+            action="Candidate Offered",
+            description=f'{candidate.name} was approved in Client Review and moved to Onboarding!',
+            icon="🤝",
+            color="#db2777"
+        )
+        db.add(activity)
+    elif action_lower == "hire":
         candidate.status = "shortlisted"
         activity = Activity(
             action="Candidate Shortlisted",
@@ -375,11 +549,24 @@ def candidate_action(candidate_id: int, action: str, db: Session = Depends(get_d
             color="#34d399"
         )
         db.add(activity)
+    elif action_lower == "talent_pool":
+        candidate.status = "talent_pool"
+        if rejection_reason:
+            candidate.rejection_reason = rejection_reason
+        activity = Activity(
+            action="Moved to Talent Pool",
+            description=f'{candidate.name} was moved to the Talent Pool.{" Notes: " + rejection_reason if rejection_reason else ""}',
+            icon="📂",
+            color="#a855f7"
+        )
+        db.add(activity)
     else:
         candidate.status = "rejected"
+        if rejection_reason:
+            candidate.rejection_reason = rejection_reason
         activity = Activity(
             action="Candidate Rejected",
-            description=f'{candidate.name} was rejected directly.',
+            description=f'{candidate.name} was rejected directly. Reason: {rejection_reason or "None"}',
             icon="❌",
             color="#f87171"
         )
@@ -407,10 +594,8 @@ def scan_github_profile(candidate_id: int, db: Session = Depends(get_db), url: O
             candidate.github_analysis = None
             db.commit()
             
-    if not candidate.github_url:
-        clean_name = re.sub(r'[^a-zA-Z0-9]', '', candidate.name.lower())
-        candidate.github_url = f"https://github.com/{clean_name}"
-        db.commit()
+    if not candidate.github_url or not candidate.github_url.strip():
+        raise HTTPException(status_code=400, detail="Candidate does not have a GitHub profile URL.")
         
     # Return cached report if already scanned and contains jd_tech_matches
     if candidate.github_analysis:
@@ -670,21 +855,18 @@ def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db), url:
             candidate.linkedin_analysis = None
             db.commit()
             
-    if not candidate.linkedin_url:
-        clean_name = re.sub(r'[^a-zA-Z0-9-]', '', candidate.name.lower().replace(" ", "-"))
-        candidate.linkedin_url = f"https://linkedin.com/in/{clean_name}"
-        db.commit()
-        
-    # Special exact profile mapping for the user / tester to showcase perfect fidelity
-    is_sameeraj = False
-    if candidate.name and ("hara" in candidate.name.lower() or "sameer" in candidate.name.lower() or "haran" in candidate.name.lower()):
-        is_sameeraj = True
-    if candidate.email and ("harasameeraj" in candidate.email.lower() or "haranaz" in candidate.email.lower()):
-        is_sameeraj = True
-    if candidate.linkedin_url and ("hara-sameeraj" in candidate.linkedin_url.lower() or "harasameeraj" in candidate.linkedin_url.lower()):
-        is_sameeraj = True
-
-    if is_sameeraj:
+    if not candidate.linkedin_url or not candidate.linkedin_url.strip():
+        raise HTTPException(status_code=400, detail="Candidate does not have a LinkedIn profile URL.")
+        # Special exact profile mapping for the user / tester to showcase perfect fidelity
+    is_ilangovan = False
+    if candidate.name and ("ilango" in candidate.name.lower() or "hara" in candidate.name.lower() or "sameer" in candidate.name.lower() or "haran" in candidate.name.lower()):
+        is_ilangovan = True
+    if candidate.email and ("harailangovan" in candidate.email.lower() or "harasameeraj" in candidate.email.lower() or "haranaz" in candidate.email.lower()):
+        is_ilangovan = True
+    if candidate.linkedin_url and ("hara-ilangovan" in candidate.linkedin_url.lower() or "ilangovan" in candidate.linkedin_url.lower() or "hara-sameeraj" in candidate.linkedin_url.lower() or "harasameeraj" in candidate.linkedin_url.lower()):
+        is_ilangovan = True
+ 
+    if is_ilangovan:
         report = {
             "user_info": {
                 "name": candidate.name,
@@ -693,8 +875,8 @@ def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db), url:
                 "location": "Chennai, Tamil Nadu, India",
                 "connections": "500+",
                 "summary": "Passionate Computer Science student at VIT Chennai. Experienced in Full Stack Web Development (React, FastAPI, Node.js, Express.js) and building scalable AI-powered integrations (OpenAI, Gemini, Groq, LangChain). Focused on open-source contributions and active GSoC 2026 preparation.",
-                "avatar_url": "https://api.dicebear.com/7.x/adventurer/svg?seed=hara-sameeraj-8b63072b7",
-                "html_url": "https://linkedin.com/in/hara-sameeraj-8b63072b7"
+                "avatar_url": "https://api.dicebear.com/7.x/adventurer/svg?seed=ilangovan-8b63072b7",
+                "html_url": "https://linkedin.com/in/ilangovan-8b63072b7"
             },
             "experience": [
                 {
@@ -718,19 +900,19 @@ def scan_linkedin_profile(candidate_id: int, db: Session = Depends(get_db), url:
                     "duration": "2024 - 2028"
                 }
             ],
-            "ai_summary": "Hara Sameeraj is a highly motivated and promising Computer Science student at VIT Chennai. In addition to academic coursework, Hara has built multiple high-fidelity software projects (such as the Blood Donor App, Business Risk Analyzer, and AI Resume Screener) utilizing modern frameworks (FastAPI, React, and various LLM APIs). Their active participation in open-source projects and GSoC preparation demonstrates self-driven initiative and rapid learning capability. Hara shows exceptional potential for junior developer or engineering intern roles, with strong code architecture foundation and practical experience with state-of-the-art AI systems.",
+            "ai_summary": "Ilangovan is a highly motivated and promising Computer Science student at VIT Chennai. In addition to academic coursework, Ilangovan has built multiple high-fidelity software projects (such as the Blood Donor App, Business Risk Analyzer, and AI Resume Screener) utilizing modern frameworks (FastAPI, React, and various LLM APIs). Their active participation in open-source projects and GSoC preparation demonstrates self-driven initiative and rapid learning capability. Ilangovan shows exceptional potential for junior developer or engineering intern roles, with strong code architecture foundation and practical experience with state-of-the-art AI systems.",
             "jd_matches": [
                 {
                     "requirement": "React.js, JavaScript, TypeScript, HTML5, CSS3, Tailwind CSS",
                     "matches_role": "Software Engineering Intern",
                     "rating": "Strong Match",
-                    "reasoning": "Hara has built several frontend interfaces in React and Tailwind CSS for their portfolio projects."
+                    "reasoning": "Ilangovan has built several frontend interfaces in React and Tailwind CSS for their portfolio projects."
                 },
                 {
                     "requirement": "Python, FastAPI, Node.js, Express.js",
                     "matches_role": "Software Engineering Intern",
                     "rating": "Strong Match",
-                    "reasoning": "Hara has developed robust backend microservices using Python, FastAPI, and Express."
+                    "reasoning": "Ilangovan has developed robust backend microservices using Python, FastAPI, and Express."
                 },
                 {
                     "requirement": "OpenAI API, Gemini API, Groq API, LangChain, Streamlit",

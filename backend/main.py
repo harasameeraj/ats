@@ -7,13 +7,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db
-from .routers import screening, dashboard, interviews, onboarding, settings, assessment
+from .routers import screening, dashboard, interviews, onboarding, settings, assessment, auth, candidate_portal
+from .auth_middleware import TenantMiddleware
 
 app = FastAPI(
     title="Stitch ATS API",
-    description="AI-Powered Applicant Tracking System",
+    description="Backend API for Stitch ATS Demo",
     version="1.0.0"
 )
+
+# Add Multi-Tenancy Middleware
+app.add_middleware(TenantMiddleware)
 
 import os
 
@@ -48,6 +52,8 @@ app.include_router(interviews.router)
 app.include_router(onboarding.router)
 app.include_router(settings.router)
 app.include_router(assessment.router)
+app.include_router(auth.router)
+app.include_router(candidate_portal.router)
 
 # Mount static files for recordings/resumes
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")

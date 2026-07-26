@@ -8,11 +8,54 @@ from typing import Optional, List
 from datetime import datetime
 
 
+# ===== AUTH =====
+class CompanySignupRequest(BaseModel):
+    company_name: str
+    recruiters: List[str]
+    tech_panels: List[str]
+    delivery_heads: List[str]
+
+class CandidateSignupRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    role: str
+    email: str
+    is_temporary_password: bool
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
 # ===== JOB =====
 class JobCreate(BaseModel):
     title: str
     description: str
     jd_filename: Optional[str] = None
+    salary_range: Optional[str] = None
+    location: Optional[str] = None
+    work_mode: Optional[str] = None
+    experience_level: Optional[str] = None
+    is_published: bool = False
+
+class JobUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    jd_filename: Optional[str] = None
+    salary_range: Optional[str] = None
+    location: Optional[str] = None
+    work_mode: Optional[str] = None
+    experience_level: Optional[str] = None
+    is_published: Optional[bool] = None
 
 class JobResponse(BaseModel):
     id: int
@@ -20,7 +63,15 @@ class JobResponse(BaseModel):
     description: str
     jd_filename: Optional[str]
     screening_questions: Optional[str] = None
+    salary_range: Optional[str] = None
+    location: Optional[str] = None
+    work_mode: Optional[str] = None
+    experience_level: Optional[str] = None
+    is_published: Optional[bool] = False
     created_at: datetime
+    
+    # Optional field for joining company data when serving to candidate
+    company_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -36,7 +87,8 @@ class CandidateResponse(BaseModel):
     status: str
     match_score: Optional[float]
     rejection_reason: Optional[str]
-    resume_filename: Optional[str]
+    resume_filename: Optional[str] = None
+    resume_text: Optional[str] = None
     assessment_token: Optional[str] = None
     assessment_score: Optional[float] = None
     assessment_status: Optional[str] = None
@@ -47,6 +99,7 @@ class CandidateResponse(BaseModel):
     linkedin_url: Optional[str] = None
     linkedin_analysis: Optional[str] = None
     client_feedback: Optional[str] = None
+    delivery_verdict: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -66,6 +119,9 @@ class ScreeningResult(BaseModel):
     overall_summary: Optional[str]
     seniority_fit: Optional[str]
     rejection_reason: Optional[str]
+    jd_vs_cv_score: Optional[float] = None
+    jd_vs_linkedin_score: Optional[float] = None
+    jd_vs_github_score: Optional[float] = None
     created_at: datetime
 
 
@@ -180,6 +236,9 @@ class SMTPSettingsResponse(BaseModel):
     smtp_password_masked: str
     smtp_from_name: str
 
+class EmailProviderUpdate(BaseModel):
+    provider: str  # "smtp" or "outlook"
+
 
 # ===== ASSESSMENT =====
 class AssessmentInfoResponse(BaseModel):
@@ -235,5 +294,9 @@ class TechVerdictUpdate(BaseModel):
     verdict: str
     verdict_notes: Optional[str] = None
 
+
+# ===== EMAIL PROVIDER =====
+class EmailProviderUpdate(BaseModel):
+    provider: str  # smtp | outlook
 
 

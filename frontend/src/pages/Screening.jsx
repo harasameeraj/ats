@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { api } from '../api/client'
+import { api, BASE_URL } from '../api/client'
 
 export default function Screening() {
   const [step, setStep] = useState(1) // 1: upload JD, 2: upload CVs, 3: running, 4: results
@@ -15,6 +15,7 @@ export default function Screening() {
   const [jobSearch, setJobSearch] = useState('')
   const jdRef = useRef(null)
   const cvRef = useRef(null)
+  const [jobToDelete, setJobToDelete] = useState(null)
 
   // AI Sourcing states
   const [sourcingLocation, setSourcingLocation] = useState('London')
@@ -23,6 +24,7 @@ export default function Screening() {
   const [importedUsernames, setImportedUsernames] = useState([])
   const [importingSourcedName, setImportingSourcedName] = useState(null)
   const [showSourcingPanel, setShowSourcingPanel] = useState(false)
+  const [showTalentPool, setShowTalentPool] = useState(false)
 
   // Tiered Scheduling / Review States
   const [selectedIds, setSelectedIds] = useState([])
@@ -30,6 +32,18 @@ export default function Screening() {
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [activeCandidate, setActiveCandidate] = useState(null)
   const [isBulkSchedule, setIsBulkSchedule] = useState(false)
+
+  // Recruiter notes & rejection states
+  const [notes, setNotes] = useState([])
+  const [newNoteText, setNewNoteText] = useState('')
+  const [modalTab, setModalTab] = useState('resume')
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [candidateToReject, setCandidateToReject] = useState(null)
+  const [rejectionReason, setRejectionReason] = useState('Technical Rejected')
+  const [rejectionNotes, setRejectionNotes] = useState('')
+  const [talentPool, setTalentPool] = useState([])
+  const [talentSearch, setTalentSearch] = useState('')
+  const [associatingCandidateId, setAssociatingCandidateId] = useState(null)
   const [scheduleForm, setScheduleForm] = useState({
     interviewer_name: 'Hiring Manager',
     date: '',
@@ -41,9 +55,12 @@ export default function Screening() {
   const [suggestLoading, setSuggestLoading] = useState(false)
   const [submittingSchedule, setSubmittingSchedule] = useState(false)
   const [invitingId, setInvitingId] = useState(null)
+  const [timeline, setTimeline] = useState([])
+  const [timelineLoading, setTimelineLoading] = useState(false)
 
   useEffect(() => {
     loadJobs()
+    loadTalentPool()
     
     // Default form date to tomorrow
     const tomorrow = new Date()
@@ -59,6 +76,29 @@ export default function Screening() {
       const j = await api.getJobs()
       setJobs(j)
     } catch (e) { console.error(e) }
+  }
+
+  async function loadTalentPool() {
+    try {
+      const candidates = await api.getCandidates()
+      setTalentPool(candidates.filter(c => c.status === 'talent_pool') || [])
+    } catch (e) { console.error(e) }
+  }
+
+  async function handleAssociateCandidate(candidateId, jobId) {
+    if (!jobId) return
+    setLoading(true)
+    try {
+      await api.associateCandidate(candidateId, jobId)
+      showToast('Candidate associated with position and re-screened successfully!')
+      setAssociatingCandidateId(null)
+      loadTalentPool()
+      loadPastResults(jobId)
+    } catch (e) {
+      showToast(e.message || 'Failed to associate candidate', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   function showToast(msg, type = 'success') {
@@ -103,14 +143,12 @@ export default function Screening() {
       
       setResults(prev => {
         if (prev.some(r => r.candidate_email === imported.candidate_email)) {
-          return prev
+          return prev.map(r => r.candidate_email === imported.candidate_email ? imported : r)
         }
-        const updated = [imported, ...prev]
-        updated.sort((a, b) => b.match_score - a.match_score)
-        return updated
+        return [...prev, imported].sort((a, b) => b.match_score - a.match_score)
       })
       
-      showToast(`Imported ${cand.name} to screening!`)
+      showToast(`Imported ${cand.name} successfully!`)
     } catch (e) {
       showToast(e.message || 'Failed to import candidate', 'error')
     } finally {
@@ -221,6 +259,26 @@ export default function Screening() {
     }
   }
 
+  function handleDeleteJob(e, jobId) {
+    e.stopPropagation(); // prevent opening the results
+    setJobToDelete(jobId);
+  }
+
+  async function confirmDeleteJob() {
+    if (!jobToDelete) return;
+    setLoading(true);
+    try {
+      await api.deleteJob(jobToDelete);
+      setJobs(prev => prev.filter(j => j.id !== jobToDelete));
+      showToast('Screening deleted successfully!');
+      setJobToDelete(null);
+    } catch (err) {
+      showToast(err.message || 'Failed to delete screening', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function getScoreColor(score) {
     if (score >= 80) return '#34d399'
     if (score >= 60) return '#fb923c'
@@ -295,9 +353,89 @@ export default function Screening() {
     setShowScheduleModal(true)
   }
 
-  function handleOpenReviewModal(candidate) {
+  async function handleOpenReviewModal(candidate) {
     setActiveCandidate(candidate)
+    setModalTab('journey')
+    setNotes([])
+    setNewNoteText('')
+    setTimeline([])
     setShowReviewModal(true)
+    
+    setTimelineLoading(true)
+    try {
+      const res = await api.getCandidateTimeline(candidate.candidate_id)
+      setTimeline(res || [])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setTimelineLoading(false)
+    }
+
+    try {
+      const res = await api.getCandidateNotes(candidate.candidate_id)
+      setNotes(res || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  async function handleAddNote() {
+    if (!newNoteText.trim() || !activeCandidate) return
+    try {
+      const newNote = await api.addCandidateNote(activeCandidate.candidate_id, newNoteText)
+      setNotes(prev => [newNote, ...prev])
+      setNewNoteText('')
+      showToast('Note added successfully!')
+    } catch (e) {
+      showToast(e.message || 'Failed to add note', 'error')
+    }
+  }
+
+  function handleOpenRejectModal(candidate) {
+    setCandidateToReject(candidate)
+    setRejectionReason('Technical Rejected')
+    setRejectionNotes('')
+    setShowRejectModal(true)
+  }
+
+  async function handleConfirmReject() {
+    if (!candidateToReject) return
+    try {
+      const candId = candidateToReject.candidate_id || candidateToReject.id
+      const fullReason = rejectionNotes.trim()
+        ? `${rejectionReason} — ${rejectionNotes.trim()}`
+        : rejectionReason
+      await api.candidateAction(candId, 'reject', fullReason)
+      showToast('Candidate successfully rejected!')
+      setShowRejectModal(false)
+      setShowReviewModal(false)
+      if (selectedJob) {
+        loadPastResults(selectedJob.id)
+      }
+      loadTalentPool()
+    } catch (e) {
+      showToast(e.message || 'Failed to reject candidate', 'error')
+    }
+  }
+
+  async function handleMoveToTalentPool() {
+    if (!candidateToReject) return
+    try {
+      const candId = candidateToReject.candidate_id || candidateToReject.id
+      const fullReason = rejectionNotes.trim()
+        ? `${rejectionReason} — ${rejectionNotes.trim()}`
+        : rejectionReason
+      await api.candidateAction(candId, 'talent_pool', fullReason)
+      showToast('Candidate moved to Talent Pool!')
+      setShowRejectModal(false)
+      setShowReviewModal(false)
+      if (selectedJob) {
+        loadPastResults(selectedJob.id)
+      }
+      loadTalentPool()
+    } catch (e) {
+      showToast(e.message || 'Failed to move to Talent Pool', 'error')
+    }
   }
 
   async function handleLoadSuggestions(candidateId) {
@@ -440,9 +578,16 @@ export default function Screening() {
               background: step > i + 1 ? '#d1fae5' : step === i + 1 ? '#ede9fe' : '#f4f4f8',
               color: step > i + 1 ? '#059669' : step === i + 1 ? '#6366f1' : '#8888a0',
               border: step === i + 1 ? '2px solid #6366f1' : '1px solid #e8e8f0',
-              cursor: i + 1 < step ? 'pointer' : 'default'
+              cursor: i + 1 < step ? 'pointer' : (i === 0 ? 'pointer' : 'default')
             }}
-            onClick={() => { if (i + 1 < step) setStep(i + 1) }}
+            onClick={() => { 
+              if (i + 1 < step) setStep(i + 1) 
+              if (i === 0) {
+                setTimeout(() => {
+                  document.getElementById('jd-section')?.scrollIntoView({ behavior: 'smooth' })
+                }, 50)
+              }
+            }}
           >
             {step > i + 1 ? '✓ ' : ''}{s}
           </div>
@@ -551,6 +696,14 @@ export default function Screening() {
                             Uploaded {formattedDate}
                           </span>
                         </div>
+                        <button 
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '0.25rem 0.5rem', color: 'var(--red)', borderColor: 'var(--red)', background: 'transparent' }}
+                          onClick={(e) => handleDeleteJob(e, j.id)}
+                          title="Delete Screening"
+                        >
+                          🗑️
+                        </button>
                       </div>
                     );
                   })}
@@ -560,9 +713,10 @@ export default function Screening() {
         </div>
       )}
 
+
       {/* STEP 1: Upload JD */}
       {step === 1 && (
-        <div className="card">
+        <div className="card" id="jd-section">
           <div className="card-title">📝 Job Description</div>
           <p className="card-sub" style={{ marginBottom: '1rem' }}>Define your ideal candidate profile</p>
 
@@ -598,157 +752,194 @@ export default function Screening() {
           </button>
         </div>
       )}
+      
+      {/* TALENT POOL DATABASE (Moved to bottom of step 1) */}
+      {step === 1 && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <button 
+            className="btn btn-outline btn-full" 
+            style={{ 
+              background: 'var(--card-bg)', 
+              borderColor: 'var(--border)', 
+              color: 'var(--t2)', 
+              fontWeight: 600,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '1rem 1.5rem'
+            }}
+            onClick={() => setShowTalentPool(prev => !prev)}
+          >
+            <span>📁 Talent Pool Database</span>
+            <span>{showTalentPool ? '▲' : '▼'}</span>
+          </button>
+          
+          {showTalentPool && (
+            <div className="card" style={{ marginTop: '0.5rem', animation: 'scaleIn 0.35s ease', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <p className="card-sub">Candidates kept for future opportunities. Move them back to active screenings inline.</p>
+                </div>
+                <div className="topbar-search" style={{ minWidth: '260px', background: 'var(--card-h)', margin: 0 }}>
+                  <span className="topbar-search-icon">🔍</span>
+                  <input 
+                    type="text" 
+                    placeholder="Search talent pool candidates..." 
+                    value={talentSearch} 
+                    onChange={e => setTalentSearch(e.target.value)} 
+                  />
+                  {talentSearch && (
+                    <span 
+                      onClick={() => setTalentSearch('')} 
+                      style={{ cursor: 'pointer', fontSize: '.75rem', color: 'var(--t3)', padding: '0 4px' }}
+                    >
+                      ×
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
+                {talentPool.filter(c => c.name.toLowerCase().includes(talentSearch.toLowerCase()) || (c.role && c.role.toLowerCase().includes(talentSearch.toLowerCase()))).length === 0 ? (
+                  <div style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--t3)', fontSize: '0.8rem' }}>
+                    No talent pool candidates match "{talentSearch || 'search'}"
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {talentPool
+                      .filter(c => c.name.toLowerCase().includes(talentSearch.toLowerCase()) || (c.role && c.role.toLowerCase().includes(talentSearch.toLowerCase())))
+                      .map(c => (
+                        <div 
+                          key={c.id} 
+                          style={{
+                            background: 'var(--white)',
+                            border: '1.5px solid var(--border)',
+                            borderRadius: 'var(--r)',
+                            padding: '0.85rem 1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '1rem',
+                            flexWrap: 'wrap'
+                          }}
+                        >
+                          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flex: 1, minWidth: '240px' }}>
+                            <div style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '50%',
+                              background: 'var(--purple-bg)',
+                              color: 'var(--purple)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 'bold',
+                              fontSize: '0.85rem'
+                            }}>
+                              {c.name.charAt(0)}
+                            </div>
+                            <div>
+                              <strong style={{ fontSize: '0.85rem', color: 'var(--t1)' }}>{c.name}</strong>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', fontSize: '0.72rem', color: 'var(--t3)' }}>
+                                <span>📁 {c.role || 'General'}</span>
+                                <span>•</span>
+                                <span style={{ color: 'var(--purple)', fontWeight: 650 }}>{c.match_score}% Match</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            {/* Review button: sets activeCandidate and opens review modal */}
+                            <button 
+                              className="btn btn-outline btn-sm" 
+                              onClick={() => {
+                                const mockActive = {
+                                  candidate_id: c.id,
+                                  candidate_name: c.name,
+                                  candidate_email: c.email,
+                                  candidate_role: c.role,
+                                  match_score: c.match_score,
+                                  strengths: c.strengths ? JSON.parse(c.strengths) : [],
+                                  gaps: c.gaps ? JSON.parse(c.gaps) : [],
+                                  overall_summary: c.overall_summary || "No summary available.",
+                                  score_justification: c.score_justification || "No justification available.",
+                                  resume_text: c.resume_text,
+                                  resume_filename: c.resume_filename,
+                                  status: c.status,
+                                  rejection_reason: c.rejection_reason
+                                }
+                                handleOpenReviewModal(mockActive)
+                              }}
+                            >
+                              🔍 Review Profile
+                            </button>
+
+                            {/* Associate with Job dropdown */}
+                            {associatingCandidateId === c.id ? (
+                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                <select 
+                                  className="form-input form-select"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', height: '32px', margin: 0 }}
+                                  onChange={e => handleAssociateCandidate(c.id, e.target.value)}
+                                  defaultValue=""
+                                >
+                                  <option value="" disabled>Select active JD...</option>
+                                  {jobs.map(j => (
+                                    <option key={j.id} value={j.id}>{j.title}</option>
+                                  ))}
+                                </select>
+                                <button className="btn btn-outline btn-sm" style={{ padding: '0.25rem 0.5rem' }} onClick={() => setAssociatingCandidateId(null)}>×</button>
+                              </div>
+                            ) : (
+                              <button 
+                                className="btn btn-primary btn-sm" 
+                                style={{ background: 'var(--purple)', borderColor: 'var(--purple)' }}
+                                onClick={() => setAssociatingCandidateId(c.id)}
+                              >
+                                📥 Match to active JD
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Recruiter Notes */}
+                          {c.rejection_reason && (
+                            <div style={{ 
+                              width: '100%', 
+                              marginTop: '0.5rem', 
+                              borderTop: '1px dashed var(--border)', 
+                              paddingTop: '0.5rem' 
+                            }}>
+                              {(() => {
+                                const parts = c.rejection_reason.split(' — ')
+                                const reason = parts[0]
+                                const notes = parts.slice(1).join(' — ')
+                                return (
+                                  <div style={{ fontSize: '0.73rem', color: 'var(--t2)', lineHeight: 1.5 }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--purple)' }}>📝 {reason}</span>
+                                    {notes && (
+                                      <span style={{ fontStyle: 'italic', color: 'var(--t3)' }}> — {notes}</span>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* STEP 2: Upload CVs */}
       {/* STEP 2: Upload CVs & AI Sourcing */}
       {step === 2 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
-          {/* Sourcing Panel */}
-          <div className="card" style={{ borderLeft: '3px solid var(--purple)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
-              <div>
-                <div className="card-title">🔍 AI Candidate Sourcing</div>
-                <p className="card-sub">Automatically scan GitHub and other resources for profiles matching <strong>{selectedJob?.title}</strong></p>
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', gap: '.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-              <div className="form-group" style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}>
-                <label className="form-label">Target City / Location</label>
-                <input 
-                  className="form-input" 
-                  placeholder="e.g. San Francisco, London, Berlin" 
-                  value={sourcingLocation} 
-                  onChange={e => setSourcingLocation(e.target.value)} 
-                />
-              </div>
-              <button 
-                className="btn btn-primary" 
-                style={{ alignSelf: 'flex-end', height: '42px', padding: '0 1.5rem' }} 
-                onClick={handleSourceCandidates}
-                disabled={sourcingLoading || !sourcingLocation}
-              >
-                {sourcingLoading ? 'Searching...' : '🔍 Find Candidates'}
-              </button>
-            </div>
-            
-            {/* Sourced Candidates Loading Skeleton */}
-            {sourcingLoading && (
-              <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
-                <div className="skeleton" style={{ height: '80px', width: '100%' }}></div>
-                <div className="skeleton" style={{ height: '80px', width: '100%' }}></div>
-              </div>
-            )}
-            
-            {/* Sourced Candidates List */}
-            {sourcedCandidates.length > 0 && (
-              <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--t1)' }}>
-                    ✨ Found {sourcedCandidates.length} Matching Profiles in {sourcingLocation}
-                  </div>
-                  <button className="btn btn-sm btn-outline" onClick={handleImportAllSourced}>
-                    📥 Import All Sourced ({sourcedCandidates.filter(c => !importedUsernames.includes(c.github_username)).length})
-                  </button>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {sourcedCandidates.map(cand => {
-                    const isImported = importedUsernames.includes(cand.github_username);
-                    return (
-                      <div 
-                        key={cand.github_username}
-                        style={{
-                          background: 'var(--card-h)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 'var(--r)',
-                          padding: '1rem',
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          justifyContent: 'space-between',
-                          gap: '1rem',
-                          position: 'relative',
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: '280px' }}>
-                          <div style={{
-                            width: '44px',
-                            height: '44px',
-                            borderRadius: '50%',
-                            background: 'var(--grad)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'white',
-                            fontWeight: 'bold',
-                            fontSize: '0.9rem',
-                            flexShrink: 0
-                          }}>
-                            {cand.name.charAt(0)}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                              <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>{cand.name}</h4>
-                              <span style={{ fontSize: '0.65rem', background: 'var(--blue-bg)', color: 'var(--blue)', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
-                                Sourced Profile
-                              </span>
-                              <span style={{ fontSize: '0.65rem', background: '#e6fbf3', color: '#10b981', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
-                                Match: {cand.match_score}%
-                              </span>
-                            </div>
-                            <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--t3)', fontWeight: 500 }}>
-                              📍 {cand.location} • 🏢 {cand.company} • 📁 {cand.public_repos} Repos
-                            </p>
-                            <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: 'var(--t2)', lineHeight: 1.4 }}>
-                              {cand.bio}
-                            </p>
-                            <p style={{ margin: '8px 0 0', fontSize: '0.72rem', color: 'var(--purple)', fontWeight: 600, fontStyle: 'italic', background: 'rgba(168,85,247,0.05)', padding: '6px 10px', borderRadius: '6px' }}>
-                              💡 <strong>Match Reason:</strong> {cand.match_reason}
-                            </p>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                          {cand.github_url && (
-                            <a 
-                              href={cand.github_url} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              className="btn btn-sm btn-outline"
-                              style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                            >
-                              🐙 GitHub
-                            </a>
-                          )}
-                          {cand.linkedin_url && (
-                            <a 
-                              href={cand.linkedin_url} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              className="btn btn-sm btn-outline"
-                              style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px', borderColor: '#0a66c2', color: '#0a66c2' }}
-                            >
-                              💼 LinkedIn
-                            </a>
-                          )}
-                          <button 
-                            className={`btn btn-sm ${isImported ? 'btn-success' : 'btn-primary'}`}
-                            style={{ fontSize: '0.65rem', padding: '4px 10px' }}
-                            onClick={() => handleImportSourcedCandidate(cand)}
-                            disabled={isImported || importingSourcedName === cand.github_username}
-                          >
-                            {isImported ? '✓ Sourced' : importingSourcedName === cand.github_username ? 'Importing...' : '📥 Import'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Manual CV Upload */}
           <div className="card">
             <div className="card-title">📄 CV Batch Upload</div>
@@ -818,166 +1009,11 @@ export default function Screening() {
               <div className="card-sub">{results.length} candidates • {selectedJob?.title}</div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button 
-                className="btn btn-outline btn-sm" 
-                style={{ borderColor: 'var(--purple)', color: 'var(--purple)' }}
-                onClick={() => setShowSourcingPanel(!showSourcingPanel)}
-              >
-                {showSourcingPanel ? '✕ Close Sourcing' : '🔍 Source More Candidates'}
-              </button>
               <button className="btn btn-outline btn-sm" onClick={() => { setStep(1); setResults([]); setCvFiles([]); setJdFile(null); setJdTitle(''); setShowSourcingPanel(false); }}>
                 New Screening
               </button>
             </div>
           </div>
-
-          {/* Collapsible Sourcing Panel inside Results step */}
-          {showSourcingPanel && (
-            <div className="card" style={{ borderLeft: '3px solid var(--purple)', marginBottom: '1.5rem', animation: 'scaleIn 0.25s ease', background: 'var(--card-h)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
-                <div>
-                  <div className="card-title">🔍 AI Candidate Sourcing</div>
-                  <p className="card-sub">Automatically scan GitHub and other resources for profiles matching <strong>{selectedJob?.title}</strong></p>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                <div className="form-group" style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}>
-                  <label className="form-label">Target City / Location</label>
-                  <input 
-                    className="form-input" 
-                    placeholder="e.g. San Francisco, London, Berlin" 
-                    value={sourcingLocation} 
-                    onChange={e => setSourcingLocation(e.target.value)} 
-                    style={{ background: 'var(--white)' }}
-                  />
-                </div>
-                <button 
-                  className="btn btn-primary" 
-                  style={{ alignSelf: 'flex-end', height: '42px', padding: '0 1.5rem' }} 
-                  onClick={handleSourceCandidates}
-                  disabled={sourcingLoading || !sourcingLocation}
-                >
-                  {sourcingLoading ? 'Searching...' : '🔍 Find Candidates'}
-                </button>
-              </div>
-              
-              {/* Sourced Candidates Loading Skeleton */}
-              {sourcingLoading && (
-                <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
-                  <div className="skeleton" style={{ height: '80px', width: '100%', background: 'var(--white)' }}></div>
-                  <div className="skeleton" style={{ height: '80px', width: '100%', background: 'var(--white)' }}></div>
-                </div>
-              )}
-              
-              {/* Sourced Candidates List */}
-              {sourcedCandidates.length > 0 && (
-                <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--t1)' }}>
-                      ✨ Found {sourcedCandidates.length} Matching Profiles in {sourcingLocation}
-                    </div>
-                    <button className="btn btn-sm btn-outline" onClick={handleImportAllSourced}>
-                      📥 Import All Sourced ({sourcedCandidates.filter(c => !importedUsernames.includes(c.github_username)).length})
-                    </button>
-                  </div>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
-                    {sourcedCandidates.map(cand => {
-                      const isImported = importedUsernames.includes(cand.github_username);
-                      return (
-                        <div 
-                          key={cand.github_username}
-                          style={{
-                            background: 'var(--white)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 'var(--r)',
-                            padding: '1rem',
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            justifyContent: 'space-between',
-                            gap: '1rem',
-                            position: 'relative',
-                            flexWrap: 'wrap'
-                          }}
-                        >
-                          <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: '280px' }}>
-                            <div style={{
-                              width: '44px',
-                              height: '44px',
-                              borderRadius: '50%',
-                              background: 'var(--grad)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'white',
-                              fontWeight: 'bold',
-                              fontSize: '0.9rem',
-                              flexShrink: 0
-                            }}>
-                              {cand.name.charAt(0)}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>{cand.name}</h4>
-                                <span style={{ fontSize: '0.65rem', background: 'var(--blue-bg)', color: 'var(--blue)', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
-                                  Sourced Profile
-                                </span>
-                                <span style={{ fontSize: '0.65rem', background: '#e6fbf3', color: '#10b981', padding: '2px 8px', borderRadius: '100px', fontWeight: 'bold' }}>
-                                  Match: {cand.match_score}%
-                                </span>
-                              </div>
-                              <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--t3)', fontWeight: 500 }}>
-                                📍 {cand.location} • 🏢 {cand.company} • 📁 {cand.public_repos} Repos
-                              </p>
-                              <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: 'var(--t2)', lineHeight: 1.4 }}>
-                                {cand.bio}
-                              </p>
-                              <p style={{ margin: '8px 0 0', fontSize: '0.72rem', color: 'var(--purple)', fontWeight: 600, fontStyle: 'italic', background: 'rgba(168,85,247,0.05)', padding: '6px 10px', borderRadius: '6px' }}>
-                                💡 <strong>Match Reason:</strong> {cand.match_reason}
-                              </p>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                            {cand.github_url && (
-                              <a 
-                                href={cand.github_url} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className="btn btn-sm btn-outline"
-                                style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                              >
-                                🐙 GitHub
-                              </a>
-                            )}
-                            {cand.linkedin_url && (
-                              <a 
-                                href={cand.linkedin_url} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className="btn btn-sm btn-outline"
-                                style={{ fontSize: '0.65rem', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '2px', borderColor: '#0a66c2', color: '#0a66c2' }}
-                              >
-                                💼 LinkedIn
-                              </a>
-                            )}
-                            <button 
-                              className={`btn btn-sm ${isImported ? 'btn-success' : 'btn-primary'}`}
-                              style={{ fontSize: '0.65rem', padding: '4px 10px' }}
-                              onClick={() => handleImportSourcedCandidate(cand)}
-                              disabled={isImported || importingSourcedName === cand.github_username}
-                            >
-                              {isImported ? '✓ Sourced' : importingSourcedName === cand.github_username ? 'Importing...' : '📥 Import'}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Bulk Action Panel */}
           {selectedIds.length > 0 && (
@@ -1049,19 +1085,26 @@ export default function Screening() {
                           {r.candidate_name.charAt(0)}
                         </div>
                         <div>
-                          <div className="cand-name">{r.candidate_name}</div>
+                          <div className="cand-name" onClick={() => handleOpenReviewModal(r)}>{r.candidate_name}</div>
                           <div className="cand-role">{r.overall_summary?.slice(0, 65)}...</div>
                         </div>
                       </div>
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                        <div className="score-bar">
-                          <div className="score-fill" style={{ width: `${r.match_score}%`, background: getScoreColor(r.match_score) }}></div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                          <div className="score-bar">
+                            <div className="score-fill" style={{ width: `${r.match_score}%`, background: getScoreColor(r.match_score) }}></div>
+                          </div>
+                          <span style={{ fontSize: '.75rem', fontWeight: 800, fontFamily: 'var(--mono)', color: getScoreColor(r.match_score) }}>
+                            {r.match_score}%
+                          </span>
                         </div>
-                        <span style={{ fontSize: '.75rem', fontWeight: 800, fontFamily: 'var(--mono)', color: getScoreColor(r.match_score) }}>
-                          {r.match_score}%
-                        </span>
+                        {r.jd_vs_cv_score !== undefined && r.jd_vs_cv_score !== null && (
+                          <div style={{ fontSize: '0.62rem', color: 'var(--t3)', letterSpacing: '0.01em', marginTop: '2px' }}>
+                            CV: <strong style={{ color: 'var(--blue)' }}>{Math.round(r.jd_vs_cv_score)}%</strong> | LI: <strong style={{ color: 'var(--purple)' }}>{Math.round(r.jd_vs_linkedin_score)}%</strong> | GH: <strong style={{ color: 'var(--green)' }}>{Math.round(r.jd_vs_github_score)}%</strong>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td style={{ fontSize: '.72rem', fontWeight: 600, color: '#555570', whiteSpace: 'nowrap' }}>{r.seniority_fit}</td>
@@ -1099,11 +1142,9 @@ export default function Screening() {
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '.4rem', justifyContent: 'flex-end' }}>
                         {/* Detailed Review for match score */}
-                        {r.match_score >= 60 && r.match_score <= 80 && (
-                          <button className="btn btn-outline btn-sm" onClick={() => handleOpenReviewModal(r)}>
-                            🔍 Review
-                          </button>
-                        )}
+                        <button className="btn btn-outline btn-sm" onClick={() => handleOpenReviewModal(r)}>
+                          🔍 Review
+                        </button>
 
                         {/* Send AI Test Button (If not invited yet) */}
                         {!r.assessment_status && tier.eligible && (
@@ -1174,11 +1215,110 @@ export default function Screening() {
             <div className="two-col" style={{ marginTop: '.5rem', flex: 1, maxHeight: '60vh', overflowY: 'auto' }}>
               {/* Left Column: AI analysis */}
               <div>
+                {/* Detailed Score Breakdown */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '0.75rem',
+                  marginBottom: '1.25rem',
+                  background: 'var(--card-h)',
+                  padding: '1rem',
+                  borderRadius: '12px',
+                  border: '1.5px solid var(--border)',
+                  boxShadow: 'var(--shadow-sm)'
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>JD vs CV</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--blue)', margin: '0.2rem 0' }}>
+                      {activeCandidate.jd_vs_cv_score !== undefined && activeCandidate.jd_vs_cv_score !== null ? `${Math.round(activeCandidate.jd_vs_cv_score)}%` : 'N/A'}
+                    </div>
+                    <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden', width: '80%', margin: '0 auto' }}>
+                      <div style={{ height: '100%', background: 'var(--blue)', width: activeCandidate.jd_vs_cv_score !== undefined && activeCandidate.jd_vs_cv_score !== null ? `${activeCandidate.jd_vs_cv_score}%` : '0%' }}></div>
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>JD vs LinkedIn</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--purple)', margin: '0.2rem 0', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '28px' }}>
+                      {activeCandidate.jd_vs_linkedin_score !== undefined && activeCandidate.jd_vs_linkedin_score !== null ? `${Math.round(activeCandidate.jd_vs_linkedin_score)}%` : <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--t3)', lineHeight: 1.2 }}>No LinkedIn link in resume</span>}
+                    </div>
+                    <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden', width: '80%', margin: '0 auto' }}>
+                      <div style={{ height: '100%', background: 'var(--purple)', width: activeCandidate.jd_vs_linkedin_score !== undefined && activeCandidate.jd_vs_linkedin_score !== null ? `${activeCandidate.jd_vs_linkedin_score}%` : '0%' }}></div>
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>JD vs GitHub</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--green)', margin: '0.2rem 0', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '28px' }}>
+                      {activeCandidate.jd_vs_github_score !== undefined && activeCandidate.jd_vs_github_score !== null ? `${Math.round(activeCandidate.jd_vs_github_score)}%` : <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--t3)', lineHeight: 1.2 }}>No GitHub link in resume</span>}
+                    </div>
+                    <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden', width: '80%', margin: '0 auto' }}>
+                      <div style={{ height: '100%', background: 'var(--green)', width: activeCandidate.jd_vs_github_score !== undefined && activeCandidate.jd_vs_github_score !== null ? `${activeCandidate.jd_vs_github_score}%` : '0%' }}></div>
+                    </div>
+                  </div>
+                </div>
+
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div className="cand-expand-title" style={{ fontSize: '.75rem', color: 'var(--blue)', fontWeight: 800 }}>Overall Fit Summary</div>
                   <p style={{ fontSize: '.8rem', color: 'var(--t2)', lineHeight: 1.5, background: 'var(--card-h)', padding: '.75rem', borderRadius: '8px', marginTop: '.25rem' }}>
                     {activeCandidate.overall_summary}
                   </p>
+                </div>
+
+                {(activeCandidate.status === 'rejected' || activeCandidate.status === 'talent_pool') && activeCandidate.rejection_reason && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <div className="cand-expand-title" style={{ fontSize: '.75rem', color: activeCandidate.status === 'rejected' ? '#ef4444' : 'var(--purple)', fontWeight: 800 }}>
+                      {activeCandidate.status === 'rejected' ? '❌ Rejection Details' : '📂 Talent Pool Notes'}
+                    </div>
+                    <div style={{
+                      fontSize: '.8rem',
+                      color: 'var(--t1)',
+                      lineHeight: 1.6,
+                      background: 'rgba(239,68,68,0.07)',
+                      border: '1.5px solid rgba(239,68,68,0.25)',
+                      padding: '.85rem 1rem',
+                      borderRadius: '8px',
+                      marginTop: '.25rem'
+                    }}>
+                      {/* Parse the combined "Reason — Notes" format */}
+                      {(() => {
+                        const parts = activeCandidate.rejection_reason.split(' — ')
+                        const reason = parts[0]
+                        const notes = parts.slice(1).join(' — ')
+                        return (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: notes ? '0.5rem' : 0 }}>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#ef4444' }}>Reason:</span>
+                              <span style={{ fontWeight: 700 }}>{reason}</span>
+                            </div>
+                            {notes && (
+                              <div style={{ borderTop: '1px dashed rgba(239,68,68,0.3)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                                <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#ef4444', marginBottom: '4px' }}>Recruiter Notes:</div>
+                                <div style={{ color: 'var(--t2)', fontStyle: 'italic' }}>{notes}</div>
+                              </div>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div className="cand-expand-title" style={{ fontSize: '.75rem', color: 'var(--purple)', fontWeight: 800 }}>AI Match Score Justification</div>
+                  <div style={{ 
+                    fontSize: '.8rem', 
+                    color: 'var(--t2)', 
+                    lineHeight: 1.5, 
+                    background: 'var(--grad-subtle)', 
+                    border: '1px solid rgba(4, 120, 87, 0.15)',
+                    padding: '.75rem', 
+                    borderRadius: '8px', 
+                    marginTop: '.25rem',
+                    fontStyle: 'italic'
+                  }}>
+                    💡 {activeCandidate.score_justification || "No justification available for this candidate's match score."}
+                  </div>
                 </div>
 
                 <div style={{ marginBottom: '1.25rem' }}>
@@ -1200,37 +1340,193 @@ export default function Screening() {
                 </div>
               </div>
 
-              {/* Right Column: Full resume text */}
+              {/* Right Column: Tabbed Resume & Notes */}
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="cand-expand-title" style={{ fontSize: '.75rem', fontWeight: 800 }}>Full Resume Contents</div>
-                <div style={{
-                  flex: 1,
-                  background: 'var(--card-h)',
-                  border: '1.5px solid var(--border)',
-                  borderRadius: 'var(--r)',
-                  padding: '1rem',
-                  fontSize: '.75rem',
-                  fontFamily: 'var(--mono)',
-                  color: 'var(--t2)',
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: '350px',
-                  overflowY: 'auto',
-                  marginTop: '.25rem'
-                }}>
-                  {activeCandidate.resume_text || "No resume text extracted."}
+                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', marginBottom: '.5rem', paddingBottom: '4px' }}>
+                  <button 
+                    className={`tab-btn ${modalTab === 'journey' ? 'active' : ''}`} 
+                    onClick={() => setModalTab('journey')}
+                    style={{ fontSize: '0.75rem', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 650, color: modalTab === 'journey' ? 'var(--blue)' : 'var(--t3)' }}
+                  >
+                    📅 Journey
+                  </button>
+                  <button 
+                    className={`tab-btn ${modalTab === 'resume' ? 'active' : ''}`} 
+                    onClick={() => setModalTab('resume')}
+                    style={{ fontSize: '0.75rem', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 650, color: modalTab === 'resume' ? 'var(--blue)' : 'var(--t3)' }}
+                  >
+                    📄 Resume
+                  </button>
+                  <button 
+                    className={`tab-btn ${modalTab === 'notes' ? 'active' : ''}`} 
+                    onClick={() => setModalTab('notes')}
+                    style={{ fontSize: '0.75rem', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 650, color: modalTab === 'notes' ? 'var(--blue)' : 'var(--t3)' }}
+                  >
+                    💬 Notes ({notes.length})
+                  </button>
                 </div>
+
+                {modalTab === 'journey' ? (
+                  <div style={{
+                    flex: 1,
+                    background: 'var(--card-h)',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: 'var(--r)',
+                    padding: '1.25rem',
+                    maxHeight: '350px',
+                    overflowY: 'auto'
+                  }}>
+                    {timelineLoading ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '180px', color: 'var(--t3)', fontSize: '0.8rem' }}>
+                        <span>⏳ Loading journey timeline...</span>
+                      </div>
+                    ) : timeline.length === 0 ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '180px', color: 'var(--t3)', fontSize: '0.8rem' }}>
+                        <span>No timeline events recorded yet.</span>
+                      </div>
+                    ) : (
+                      <div style={{ position: 'relative', paddingLeft: '1.5rem', borderLeft: '2px solid var(--border)', marginLeft: '0.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingY: '0.5rem' }}>
+                        {timeline.map((evt, idx) => {
+                          let icon = '📋'
+                          let color = 'var(--blue)'
+                          if (evt.status === 'upcoming') {
+                            icon = '⚪'
+                            color = '#94a3b8'
+                          } else {
+                            if (evt.stage === 'uploaded') { icon = '📄'; color = '#60a5fa' }
+                            else if (evt.stage === 'screening') { icon = '🤖'; color = '#10b981' }
+                            else if (evt.stage === 'assessment_invited') { icon = '✉️'; color = '#f59e0b' }
+                            else if (evt.stage === 'assessment_completed') { icon = '📝'; color = '#34d399' }
+                            else if (evt.stage === 'interview') { icon = '🎙️'; color = '#8b5cf6' }
+                            else if (evt.stage === 'offer') { icon = '🎉'; color = '#ec4899' }
+                            else if (evt.stage === 'joining') { icon = '🏁'; color = '#f43f5e' }
+                          }
+
+                          const formattedTime = evt.date 
+                            ? new Date(evt.date).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : 'Upcoming'
+
+                          return (
+                            <div key={idx} style={{ position: 'relative', opacity: evt.status === 'upcoming' ? 0.65 : 1 }}>
+                              {/* Dot Icon */}
+                              <div style={{
+                                position: 'absolute',
+                                left: '-2.15rem',
+                                top: '0.1rem',
+                                background: color,
+                                width: '1.25rem',
+                                height: '1.25rem',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.7rem',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                zIndex: 1
+                              }}>
+                                <span style={{ color: '#fff' }}>{icon}</span>
+                              </div>
+
+                              {/* Content */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.78rem', fontWeight: 750, color: 'var(--t1)' }}>{evt.title}</span>
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--t3)', fontWeight: 600 }}>{formattedTime}</span>
+                                </div>
+                                <p style={{ fontSize: '0.72rem', color: 'var(--t2)', marginTop: '0.15rem', lineHeight: 1.4 }}>
+                                  {evt.description}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : modalTab === 'resume' ? (
+                  <div style={{
+                    flex: 1,
+                    background: 'var(--card-h)',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: 'var(--r)',
+                    padding: '0',
+                    fontSize: '.75rem',
+                    fontFamily: 'var(--mono)',
+                    color: 'var(--t2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    maxHeight: '450px',
+                    height: '450px',
+                    overflow: 'hidden'
+                  }}>
+                    {activeCandidate.resume_filename ? (
+                      <>
+                        <div style={{ padding: '0.5rem 1rem', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--t1)' }}>Original Document</span>
+                          <a href={`${BASE_URL}/uploads/cv_${activeCandidate.resume_filename}`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm">
+                            Open in New Tab
+                          </a>
+                        </div>
+                        <iframe
+                          src={`${BASE_URL}/uploads/cv_${activeCandidate.resume_filename}`}
+                          style={{ flex: 1, width: '100%', border: 'none', borderRadius: '0 0 calc(var(--r) - 2px) calc(var(--r) - 2px)' }}
+                          title="Resume Document"
+                        />
+                      </>
+                    ) : (
+                      <div style={{ padding: '1rem' }}>Original file not available.</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '350px', overflowY: 'auto', background: 'var(--card-h)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '1rem' }}>
+                    {/* Add note input */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        className="form-input" 
+                        value={newNoteText}
+                        onChange={e => setNewNoteText(e.target.value)}
+                        placeholder="Add recruiter note or update..."
+                        style={{ fontSize: '0.8rem', flex: 1 }}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddNote(); }}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={handleAddNote}>Add</button>
+                    </div>
+
+                    {/* Notes Feed */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
+                      {notes.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: 'var(--t3)', fontSize: '0.75rem', marginTop: '2rem' }}>No recruiter notes yet. Add one above!</div>
+                      ) : (
+                        notes.map(n => (
+                          <div key={n.id} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--t3)' }}>
+                              <strong>✍️ {n.author}</strong>
+                              <span>{new Date(n.created_at).toLocaleString()}</span>
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--t1)' }}>{n.content}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '.75rem', marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
               <button className="btn btn-outline" onClick={() => setShowReviewModal(false)}>Close</button>
-              <button
-                className="btn btn-primary"
-                disabled={activeCandidate.status === 'interviewed'}
-                onClick={() => handleOpenSingleSchedule(activeCandidate)}
-              >
-                {activeCandidate.status === 'interviewed' ? '✓ Already Scheduled' : '📅 Schedule Interview'}
-              </button>
+              {activeCandidate.status !== 'rejected' && (
+                <button className="btn btn-danger" onClick={() => handleOpenRejectModal(activeCandidate)}>
+                  ❌ Reject
+                </button>
+              )}
+
             </div>
           </div>
         </div>
@@ -1386,9 +1682,79 @@ export default function Screening() {
         </div>
       )}
 
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
+      {/* REJECTION REASON MODAL */}
+      {showRejectModal && candidateToReject && (
+        <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <button className="modal-close" onClick={() => setShowRejectModal(false)}>×</button>
+            <div className="modal-title">Reject Candidate</div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--t2)', marginBottom: '1.25rem' }}>
+              Select a rejection reason for <strong>{candidateToReject.candidate_name || candidateToReject.name}</strong>:
+            </p>
+            
+            <div className="form-group">
+              <label className="form-label">Rejection Reason</label>
+              <select 
+                className="form-input form-select"
+                value={rejectionReason}
+                onChange={e => setRejectionReason(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)' }}
+              >
+                <option value="Technical Rejected">Technical Rejected</option>
+                <option value="Salary Mismatch">Salary Mismatch</option>
+                <option value="Position Closed">Position Closed</option>
+                <option value="Keep for Future Opportunities">Keep for Future Opportunities</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '1rem' }}>
+              <label className="form-label">Additional Recruiter Notes <span style={{ color: 'var(--t3)', fontWeight: 400 }}>(optional)</span></label>
+              <textarea
+                className="form-input"
+                value={rejectionNotes}
+                onChange={e => setRejectionNotes(e.target.value)}
+                placeholder="Add any additional context, feedback, or notes for future reference..."
+                rows={3}
+                style={{ width: '100%', resize: 'vertical', fontSize: '0.8rem', lineHeight: 1.5 }}
+              />
+              <div style={{ fontSize: '0.68rem', color: 'var(--t3)', marginTop: '4px' }}>These notes will be saved alongside the rejection reason and are viewable in the candidate's profile.</div>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-outline" onClick={() => setShowRejectModal(false)}>Cancel</button>
+              <button 
+                className="btn btn-primary" 
+                style={{ background: 'var(--purple)', borderColor: 'var(--purple)' }} 
+                onClick={handleMoveToTalentPool}
+              >
+                📂 Move to Talent Pool
+              </button>
+              <button className="btn btn-danger" onClick={handleConfirmReject}>Confirm Reject</button>
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Delete Job Confirmation Modal */}
+      {jobToDelete && (
+        <div className="modal-overlay" onClick={() => setJobToDelete(null)}>
+          <div className="modal" style={{ maxWidth: '450px', textAlign: 'center', padding: '2.5rem' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: '64px', height: '64px', background: '#fef2f2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+              <span style={{ fontSize: '2rem' }}>⚠️</span>
+            </div>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.75rem' }}>Delete AI Screening?</h2>
+            <p style={{ color: 'var(--t2)', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+              Are you sure you want to permanently delete this AI screening pipeline? All candidates and AI metrics associated with it will be removed. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setJobToDelete(null)}>Cancel</button>
+              <button className="btn btn-primary" style={{ flex: 1, background: '#ef4444', borderColor: '#ef4444' }} onClick={confirmDeleteJob}>Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
     </div>
   )
 }

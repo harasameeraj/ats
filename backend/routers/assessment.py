@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Candidate, Job, Activity
+from ..models import Candidate, Job, Activity, CommunicationLog
 from ..schemas import AssessmentInfoResponse, AssessmentResponseSubmit
 from ..services.assessment_eval import grade_assessment
 from ..services.email_sender import send_email
@@ -52,6 +52,7 @@ def invite_candidate(candidate_id: int, job_id: int, db: Session = Depends(get_d
     token = str(uuid.uuid4())
     candidate.assessment_token = token
     candidate.assessment_status = "pending"
+    candidate.status = "shortlisted"
     candidate.assessment_score = None
     candidate.assessment_responses = None
     candidate.assessment_violations = 0
@@ -93,24 +94,45 @@ Hiring Team
     # Send email using dynamic SMTP settings
     email_result = send_email(to_email=candidate.email, subject=subject, body=body, db=db)
     
-    # If email failed (e.g. SMTP credentials not set), we raise error so HR knows
+    # If email failed (e.g. SMTP credentials not set), we log a warning but DO NOT crash the request.
+    # This ensures the demo can proceed (state updates to pending) even without real email credentials.
+    warning_msg = None
     if not email_result["success"]:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Failed to send email invite: {email_result['message']}. Please check your SMTP settings."
-        )
+        warning_msg = email_result['message']
+        print(f"[DEMO WARNING] Email failed: {warning_msg}")
 
     # Log activity
+    act_desc = f"AI screening test invitation sent to {candidate.name} for {job.title}"
+    if warning_msg:
+        act_desc = f"AI screening test initiated for {candidate.name}, but email invite failed to send."
+        
     activity = Activity(
         action="Assessment Invited",
-        description=f"AI screening test invitation sent to {candidate.name} for {job.title}",
+        description=act_desc,
         icon="✉️",
         color="#a855f7"
     )
     db.add(activity)
+
+    # Log communication ONLY if actually sent
+    if email_result["success"]:
+        comm = CommunicationLog(
+            candidate_id=candidate.id,
+            type="email",
+            subject=subject,
+            body=body,
+            sender="Recruiter",
+            recipient=candidate.email
+        )
+        db.add(comm)
+
     db.commit()
 
-    return {"message": "Invitation sent successfully", "link": link}
+    msg = "Invitation sent successfully"
+    if warning_msg:
+        msg = f"Candidate invited, but email delivery failed (check SMTP settings)."
+
+    return {"message": msg, "link": link}
 
 
 @router.get("/info/{token}", response_model=AssessmentInfoResponse)

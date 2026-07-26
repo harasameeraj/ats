@@ -4,17 +4,47 @@ import Dashboard from './pages/Dashboard'
 import Screening from './pages/Screening'
 import Interviews from './pages/Interviews'
 import Onboarding from './pages/Onboarding'
+import Communications from './pages/Communications'
 import Settings from './pages/Settings'
 import Assessment from './pages/Assessment'
+import ClientReview from './pages/ClientReview'
+import GlobalCandidateTimelineModal from './components/GlobalCandidateTimelineModal'
+import CandidateDashboard from './pages/CandidateDashboard'
+import JobPostings from './pages/JobPostings'
 import { api } from './api/client'
 import './App.css'
+import Login from './pages/Login'
 
+window.onerror = function(msg, src, lineno, colno, error) {
+  document.body.innerHTML += `<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;z-index:9999;padding:20px;font-family:monospace"><b>Global Error:</b> ${msg}<br/>${error?.stack}</div>`;
+};
+
+window.addEventListener("unhandledrejection", function(event) {
+  document.body.innerHTML += `<div style="position:fixed;top:0;left:0;right:0;background:orange;color:white;z-index:9999;padding:20px;font-family:monospace"><b>Unhandled Promise:</b> ${event.reason?.message || event.reason}</div>`;
+});
+
+import { AuthProvider, useAuth } from './contexts/AuthContext'
+import ChangePasswordModal from './components/ChangePasswordModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 const pageNames = {
   '/dashboard': 'Dashboard',
   '/screening': 'AI Screening',
   '/interviews': 'Interviews',
+  '/client-review': 'Client Review',
   '/onboarding': 'Onboarding',
+  '/communications': 'Communications',
   '/settings': 'Settings',
+  '/candidate-portal': 'Candidate Portal',
+  '/job-postings': 'Job Postings'
+}
+
+
+function ProtectedRoute({ children }) {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
 }
 
 function Topbar() {
@@ -96,24 +126,14 @@ function Topbar() {
     setSearchQuery('')
     setSearchResults([])
     setShowSearchDropdown(false)
-
-    // Route based on status
-    if (['uploaded', 'screened', 'shortlisted'].includes(cand.status)) {
-      navigate('/screening')
-    } else if (cand.status === 'interviewed') {
-      navigate('/interviews')
-    } else if (['offered', 'onboarded', 'completed'].includes(cand.status)) {
-      navigate('/onboarding')
-    } else {
-      navigate('/screening')
-    }
+    window.showCandidateTimeline(cand.id)
   }
 
   return (
     <div className="topbar">
       <div className="topbar-left">
         <div className="topbar-breadcrumb">
-          Stitch ATS / <span>{currentPage}</span>
+          Derisk360 / <span>{currentPage}</span>
         </div>
       </div>
       
@@ -198,11 +218,22 @@ function Topbar() {
 
 function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [activeRole, setActiveRole] = useState(localStorage.getItem('activeRole') || 'Recruiting')
+  const { user, logout } = useAuth();
+  const activeRole = user?.role === 'recruiter' ? 'Recruiting' : user?.role === 'delivery_head' ? 'Operational head' : user?.role === 'candidate' ? 'candidate' : 'Technical panel';
   const [toast, setToast] = useState(null)
+  const [globalCandidateId, setGlobalCandidateId] = useState(null)
   const location = useLocation()
   const navigate = useNavigate()
   const isAssessmentPage = location.pathname.startsWith('/assessment/')
+
+  useEffect(() => {
+    window.showCandidateTimeline = (candidateId) => {
+      setGlobalCandidateId(candidateId)
+    }
+    return () => {
+      delete window.showCandidateTimeline
+    }
+  }, [])
 
   function showToast(message) {
     setToast(message)
@@ -219,28 +250,42 @@ function AppContent() {
     navigate('/dashboard')
   }
 
+  const isLoginPage = location.pathname === '/login';
+
   if (isAssessmentPage) {
     return (
-      <Routes>
-        <Route path="/assessment/:token" element={<Assessment />} />
-      </Routes>
+      <div className="app-container">
+        <main className="main-content" style={{ margin: 0, padding: 0 }}>
+          <Routes>
+            <Route path="/assessment/:token" element={<Assessment />} />
+          </Routes>
+        </main>
+      </div>
+    )
+  }
+
+  if (isLoginPage) {
+    return (
+      <div className="app-container">
+        <main className="main-content" style={{ margin: 0, padding: 0 }}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </main>
+      </div>
     )
   }
 
   return (
-    <div className="app-layout">
+    <div className="app-container">
       {/* Sidebar */}
-      <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <svg viewBox="0 0 32 32" fill="none" width="28" height="28">
-              <rect width="32" height="32" rx="8" fill="url(#slg)" />
-              <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              <defs><linearGradient id="slg" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#047857" /><stop offset="1" stopColor="#10b981" /></linearGradient></defs>
-            </svg>
+            <img src="/derisk_logo.png" alt="Derisk360 Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
             {sidebarOpen && (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="sidebar-title">Stitch ATS</span>
+                <span className="sidebar-title">Derisk360</span>
                 <span className="sidebar-subtitle" style={{ fontSize: '0.65rem', color: 'var(--t3)', fontWeight: '500', marginTop: '2px' }}>
                   {activeRole === 'Recruiting' 
                     ? 'Enterprise Recruitment' 
@@ -259,21 +304,32 @@ function AppContent() {
 
 
         <nav className="sidebar-nav">
-          <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <span className="nav-icon">📊</span>
-            {sidebarOpen && (
-              <span>
-                {activeRole === 'Recruiting' 
-                  ? 'Recruitment Board' 
-                  : activeRole === 'Operational head' 
-                    ? 'Delivery Board' 
-                    : 'My Interviews'}
-              </span>
-            )}
-          </NavLink>
+          {activeRole === 'candidate' ? (
+            <NavLink to="/candidate-portal" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <span className="nav-icon">🎯</span>
+              {sidebarOpen && <span>Candidate Portal</span>}
+            </NavLink>
+          ) : (
+            <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <span className="nav-icon">📊</span>
+              {sidebarOpen && (
+                <span>
+                  {activeRole === 'Recruiting' 
+                    ? 'Recruitment Board' 
+                    : activeRole === 'Operational head' 
+                      ? 'Delivery Board' 
+                      : 'My Interviews'}
+                </span>
+              )}
+            </NavLink>
+          )}
           
           {activeRole === 'Recruiting' && (
             <>
+              <NavLink to="/job-postings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">📢</span>
+                {sidebarOpen && <span>Job Postings</span>}
+              </NavLink>
               <NavLink to="/screening" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <span className="nav-icon">🧠</span>
                 {sidebarOpen && <span>AI Screening</span>}
@@ -282,14 +338,22 @@ function AppContent() {
                 <span className="nav-icon">💻</span>
                 {sidebarOpen && <span>Tech Panel</span>}
               </NavLink>
+              <NavLink to="/client-review" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">💼</span>
+                {sidebarOpen && <span>Client Review</span>}
+              </NavLink>
               <NavLink to="/onboarding" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <span className="nav-icon">👥</span>
                 {sidebarOpen && <span>Onboarding</span>}
               </NavLink>
+              <NavLink to="/communications" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">💬</span>
+                {sidebarOpen && <span>Communications</span>}
+              </NavLink>
             </>
           )}
 
-          {activeRole !== 'Technical panel' && (
+          {activeRole !== 'Technical panel' && activeRole !== 'candidate' && (
             <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <span className="nav-icon">⚙️</span>
               {sidebarOpen && <span>Settings</span>}
@@ -302,39 +366,43 @@ function AppContent() {
         {sidebarOpen && (
           <div className="sidebar-user" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '12px', gap: '8px', borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div className="sidebar-user-avatar">S</div>
-              <div className="sidebar-user-info">
-                <div className="sidebar-user-name">Sameeraj</div>
+              <div className="sidebar-user-avatar">{user?.email ? user.email[0].toUpperCase() : 'U'}</div>
+              <div className="sidebar-user-info" style={{ overflow: 'hidden' }}>
+                <div className="sidebar-user-name" title={user?.email} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {user?.email?.split('@')[0] || 'User'}
+                </div>
                 <div className="sidebar-user-role" style={{ textTransform: 'none', color: 'var(--blue)' }}>
-                  {activeRole === 'Recruiting' ? 'Recruiter' : activeRole === 'Operational head' ? 'Delivery Head' : 'Tech Panel'}
+                  {activeRole === 'Recruiting' ? 'Recruiter' : activeRole === 'Operational head' ? 'Delivery Head' : activeRole === 'candidate' ? 'Candidate' : 'Tech Panel'}
                 </div>
               </div>
             </div>
             
-            {/* Interactive Role Switcher dropdown */}
-            <select
-              value={activeRole}
-              onChange={e => handleRoleChange(e.target.value)}
+            <button 
+              onClick={() => {
+                logout();
+                navigate('/login');
+              }}
               style={{
+                marginTop: '4px',
+                padding: '6px',
                 background: 'var(--bg)',
                 border: '1px solid var(--border)',
-                color: 'var(--t1)',
-                padding: '6px 8px',
                 borderRadius: '6px',
-                fontSize: '0.72rem',
+                color: 'var(--t2)',
                 cursor: 'pointer',
-                outline: 'none',
-                width: '100%',
-                fontWeight: '600',
-                transition: 'all 0.2s',
-                marginTop: '4px'
+                fontSize: '0.75rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                fontWeight: 600,
+                transition: 'all 0.2s'
               }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#fca5a5'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.color = 'var(--t2)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
             >
-              <option value="Recruiting">Recruiting (TA)</option>
-              <option value="Technical panel">Technical Panel</option>
-              <option value="Operational head">Operational Head (Delivery)</option>
-            </select>
-
+              <span style={{ fontSize: '0.9rem' }}>🚪</span> Logout
+            </button>
           </div>
         )}
 
@@ -348,12 +416,17 @@ function AppContent() {
         <Topbar />
         <div className="content-area">
           <Routes>
+            <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/screening" element={<Screening />} />
-            <Route path="/interviews" element={<Interviews />} />
-            <Route path="/onboarding" element={<Onboarding />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/screening" element={<ProtectedRoute><Screening /></ProtectedRoute>} />
+            <Route path="/job-postings" element={<ProtectedRoute><JobPostings /></ProtectedRoute>} />
+            <Route path="/interviews" element={<ProtectedRoute><Interviews /></ProtectedRoute>} />
+            <Route path="/client-review" element={<ProtectedRoute><ClientReview /></ProtectedRoute>} />
+            <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+            <Route path="/communications" element={<ProtectedRoute><Communications /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/candidate-portal" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
           </Routes>
         </div>
       </main>
@@ -365,15 +438,28 @@ function AppContent() {
           <span>{toast}</span>
         </div>
       )}
+
+      {/* Global Candidate Timeline Modal */}
+      {globalCandidateId && (
+        <GlobalCandidateTimelineModal 
+          candidateId={globalCandidateId} 
+          onClose={() => setGlobalCandidateId(null)} 
+        />
+      )}
     </div>
   )
 }
 
 function App() {
   return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <ChangePasswordModal />
+          <AppContent />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 

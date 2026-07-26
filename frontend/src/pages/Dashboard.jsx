@@ -1,23 +1,19 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 import RecruitmentDashboard from '../components/RecruitmentDashboard'
 import DeliveryDashboard from '../components/DeliveryDashboard'
 import TechPanelDashboard from '../components/TechPanelDashboard'
 
+import { Navigate } from 'react-router-dom'
+
 export default function Dashboard() {
-  const [activeRole, setActiveRole] = useState(localStorage.getItem('activeRole') || 'Recruiting')
+  const { user } = useAuth();
+  
+  if (user?.role === 'candidate') {
+    return <Navigate to="/candidate-portal" replace />
+  }
 
-  useEffect(() => {
-    function handleRoleChange() {
-      const role = localStorage.getItem('activeRole') || 'Recruiting'
-      setActiveRole(role)
-    }
-
-    // Listen to custom role selection change events from the Sidebar
-    window.addEventListener('roleChanged', handleRoleChange)
-    return () => {
-      window.removeEventListener('roleChanged', handleRoleChange)
-    }
-  }, [])
+  const activeRole = user?.role === 'recruiter' ? 'Recruiting' : user?.role === 'delivery_head' ? 'Operational head' : 'Technical panel';
 
   if (activeRole === 'Recruiting') {
     return <RecruitmentDashboard />

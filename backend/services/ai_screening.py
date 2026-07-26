@@ -22,21 +22,27 @@ def get_ai_client_and_model():
     openai_key = os.getenv("OPENAI_API_KEY")
     gemini_key = os.getenv("GEMINI_API_KEY")
 
+    import httpx
+    http_client = httpx.Client(verify=False)
+
     if groq_key and groq_key.strip():
         client = OpenAI(
             api_key=groq_key.strip(),
-            base_url="https://api.groq.com/openai/v1"
+            base_url="https://api.groq.com/openai/v1",
+            http_client=http_client
         )
         return client, "llama-3.3-70b-versatile", "groq"
     elif openai_key and openai_key.strip() and not openai_key.startswith("sk-" + "proj-" + "de5IUiFUBOI8xtN1FpiiDcGPY0c4f9107RXn-W_tP5WWl46BDWOjLWrtcoAK33NO_EU9ywR23IT3BlbkFJhZqFaQabubXCX3VDLyTaSRwADmQtthdt0HJ_BAA1eiFgDOoAnUICsd616P2fWjcoqnzmAcQgIA"):
         client = OpenAI(
-            api_key=openai_key.strip()
+            api_key=openai_key.strip(),
+            http_client=http_client
         )
         return client, "gpt-4o-mini", "openai"
     else:
         client = OpenAI(
             api_key=gemini_key.strip() if gemini_key else "",
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            http_client=http_client
         )
         return client, "gemini-2.5-flash", "gemini"
 
@@ -97,7 +103,7 @@ def clean_json_response(content: str) -> str:
 def screen_single_candidate(jd_text: str, resume_text: str, candidate_name: str) -> dict:
     """
     Screen a single candidate's resume against a job description using GPT-4o.
-    Returns a dict with match_score, strengths, gaps, rejection_reason, etc.
+    Returns a dict with match_score, sub-scores, strengths, gaps, rejection_reason, etc.
     """
     prompt = f"""You are an expert HR recruiter and talent acquisition specialist. 
 Analyze the following resume against the job description using SEMANTIC matching 
@@ -112,12 +118,16 @@ CANDIDATE RESUME ({candidate_name}):
 
 Return a JSON object with exactly these fields:
 {{
-    "match_score": <number 0-100>,
+    "jd_vs_cv_score": <number 0-100, score of JD matching resume/CV>,
+    "jd_vs_linkedin_score": <number 0-100, or null if no LinkedIn URL or profile data is present in the resume>,
+    "jd_vs_github_score": <number 0-100, or null if no GitHub URL or open-source projects are present in the resume>,
+    "match_score": <number 0-100, representing the overall percentage match (average of the NON-NULL sub-scores above)>,
     "strengths": ["strength 1", "strength 2", "strength 3"],
     "gaps": ["gap 1", "gap 2"],
-    "rejection_reason": "<reason string if score < 40, else null>",
+    "rejection_reason": "<reason string if match_score < 40, else null>",
     "seniority_fit": "<junior|mid|senior|lead>",
-    "overall_summary": "<2-3 sentence summary of fit>"
+    "overall_summary": "<2-3 sentence summary of fit>",
+    "score_justification": "<2-3 sentence explanation of why these match scores were awarded>"
 }}
 
 Be fair but thorough. A score of 70+ means shortlist-worthy. Below 40 means reject.
@@ -137,23 +147,46 @@ Return ONLY valid JSON, no markdown.
 
         result = json.loads(clean_json_response(response.choices[0].message.content))
 
-        # Ensure required fields exist with defaults
+        # Handle optional scores properly (they might be None/null)
+        jd_vs_cv_val = result.get("jd_vs_cv_score")
+        jd_vs_cv = float(jd_vs_cv_val) if jd_vs_cv_val is not None else 0.0
+        
+        li_val = result.get("jd_vs_linkedin_score")
+        jd_vs_li = float(li_val) if li_val is not None else None
+        
+        gh_val = result.get("jd_vs_github_score")
+        jd_vs_gh = float(gh_val) if gh_val is not None else None
+        
+        # Calculate/fallback overall match_score as average of non-null scores
+        valid_scores = [s for s in [jd_vs_cv, jd_vs_li, jd_vs_gh] if s is not None]
+        default_match = round(sum(valid_scores) / len(valid_scores)) if valid_scores else 0
+        overall_val = result.get("match_score")
+        overall = float(overall_val) if overall_val is not None else default_match
+
         return {
-            "match_score": float(result.get("match_score", 0)),
+            "match_score": overall,
+            "jd_vs_cv_score": jd_vs_cv,
+            "jd_vs_linkedin_score": jd_vs_li,
+            "jd_vs_github_score": jd_vs_gh,
             "strengths": json.dumps(result.get("strengths", [])),
             "gaps": json.dumps(result.get("gaps", [])),
             "rejection_reason": result.get("rejection_reason"),
             "seniority_fit": result.get("seniority_fit", "unknown"),
-            "overall_summary": result.get("overall_summary", "No summary available.")
+            "overall_summary": result.get("overall_summary", "No summary available."),
+            "score_justification": result.get("score_justification", "No justification provided.")
         }
     except Exception as e:
         return {
             "match_score": 0.0,
+            "jd_vs_cv_score": 0.0,
+            "jd_vs_linkedin_score": None,
+            "jd_vs_github_score": None,
             "strengths": json.dumps([]),
             "gaps": json.dumps([f"Error during screening: {str(e)}"]),
             "rejection_reason": f"Screening error: {str(e)}",
             "seniority_fit": "unknown",
-            "overall_summary": f"Error occurred during AI screening: {str(e)}"
+            "overall_summary": f"Error occurred during AI screening: {str(e)}",
+            "score_justification": f"Screening error occurred: {str(e)}"
         }
 
 
@@ -266,3 +299,123 @@ def generate_ai_email(candidate_name: str, role: str, strengths: list, gaps: lis
             "subject": f"Interview Invitation - {role}",
             "body": f"Dear {candidate_name},\n\nWe are pleased to invite you to discuss the {role} position. Our team will contact you shortly to coordinate time slots."
         }
+
+
+def generate_candidate_rubric(candidate_name: str, role: str, resume_text: str, jd_text: str) -> dict:
+    """
+    Generate a 5-question customized technical interview rubric for a candidate
+    based on their resume and the job description using LLM.
+    """
+    prompt = f"""You are a senior technical interviewer and engineering manager.
+Create a structured technical interview rubric consisting of exactly 5 custom questions 
+tailored specifically to the candidate's actual experience on their resume and the target Job Description.
+
+JOB DESCRIPTION / TARGET ROLE:
+Role: {role}
+JD Detail: {jd_text[:2000] if jd_text else "No specific JD detail available."}
+
+CANDIDATE RESUME ({candidate_name}):
+{resume_text[:2000] if resume_text else "No resume text available. Generate standard questions for this role."}
+
+For each of the 5 questions:
+1. Formulate a clear, specific question based on their technologies or project experiences (if resume is available) or core expectations for the role.
+2. Provide the expected answer.
+3. List the skills tested.
+4. Define a simple grading rubric for the response:
+   - What a Pass response looks like.
+   - What a Good response looks like.
+   - What an Excellent response looks like.
+
+Return a JSON object with exactly this format:
+{{
+    "candidate_name": "{candidate_name}",
+    "role": "{role}",
+    "rubrics": [
+        {{
+            "question": "<Specific interview question>",
+            "expected_answer": "<The ideal expected technical answer>",
+            "skills_tested": "<Comma-separated skills tested, e.g. React, State Management>",
+            "grading_rubric": {{
+                "pass": "<Short description of a minimum passing response>",
+                "good": "<Short description of a good response>",
+                "excellent": "<Short description of an excellent, highly-detailed response>"
+            }}
+        }},
+        ...
+    ]
+}}
+
+Return ONLY valid JSON. Do not wrap in backticks or include other text.
+"""
+    try:
+        response = safe_chat_completion(
+            model="gemini-2.5-flash",
+            messages=[
+                {"role": "system", "content": "You are a senior technical interviewer. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            response_format={"type": "json_object"}
+        )
+        content = clean_json_response(response.choices[0].message.content)
+        result = json.loads(content)
+        return result
+    except Exception as e:
+        # Fallback rubric structure
+        return {
+            "candidate_name": candidate_name,
+            "role": role,
+            "rubrics": [
+                {
+                    "question": f"Explain your experience working with {role} technologies and libraries.",
+                    "expected_answer": "Candidate should detail practical experience, naming specific projects, frameworks, and tools used.",
+                    "skills_tested": "General Technical Experience, Architecture",
+                    "grading_rubric": {
+                        "pass": "Mentions basic concepts and standard library usage.",
+                        "good": "Explains system design, trade-offs, and state management details.",
+                        "excellent": "Demonstrates deep mastery of performance optimization, scaling, and custom integrations."
+                    }
+                },
+                {
+                    "question": "Can you describe a challenging technical issue you solved in a past project?",
+                    "expected_answer": "Candidate should outline the problem, their debugging process, their solution, and what they learned.",
+                    "skills_tested": "Problem Solving, Debugging",
+                    "grading_rubric": {
+                        "pass": "Resolves a simple syntax or logic bug.",
+                        "good": "Fixes a complex configuration or concurrency issue with clear steps.",
+                        "excellent": "Optimizes a database query or network lag, providing solid performance metrics before/after."
+                    }
+                },
+                {
+                    "question": "How do you ensure code quality, testability, and adherence to clean coding principles in your team?",
+                    "expected_answer": "Candidate should discuss unit testing, code reviews, linting, CI/CD, and DRY/SOLID patterns.",
+                    "skills_tested": "Software Engineering Best Practices, Testing",
+                    "grading_rubric": {
+                        "pass": "Writes simple unit tests and follows style guides.",
+                        "good": "Configures automatic linting/CI pipelines and conducts thorough pull-request reviews.",
+                        "excellent": "Designs modular, decoupled interfaces following SOLID principles and maintains high test coverage."
+                    }
+                },
+                {
+                    "question": "What is your approach to handling asynchronous operations, state changes, or API integration issues?",
+                    "expected_answer": "Candidate should detail error handling, caching, state propagation, and asynchronous control flows.",
+                    "skills_tested": "Async Programming, API Integration",
+                    "grading_rubric": {
+                        "pass": "Uses basic try/catch or async/await syntax.",
+                        "good": "Handles rate limiting, loading states, and updates state libraries cleanly.",
+                        "excellent": "Implements debouncing, optimistic updates, and offline caching patterns."
+                    }
+                },
+                {
+                    "question": "Describe a scenario where you had to collaborate with stakeholders on an ambiguous product requirement.",
+                    "expected_answer": "Candidate should explain how they clarify constraints, communicate technical limits, and iterate on specs.",
+                    "skills_tested": "Communication, Technical Alignment",
+                    "grading_rubric": {
+                        "pass": "Asks questions and implements the best guess.",
+                        "good": "Drafts basic design docs or mockups to align with the product owner before building.",
+                        "excellent": "Proposes iterative deliverables (MVP), tracks edge cases, and guides product decisions using tech metrics."
+                    }
+                }
+            ]
+        }
+

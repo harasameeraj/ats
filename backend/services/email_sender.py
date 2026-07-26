@@ -20,6 +20,9 @@ load_dotenv(_env_path)
 
 def get_smtp_settings(db: Session = None) -> dict:
     """Get SMTP configuration resolving database overrides first, then env variables."""
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(_env_path, override=True)
+    
     settings = {
         "host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
         "port": int(os.getenv("SMTP_PORT", "587")),
@@ -30,20 +33,27 @@ def get_smtp_settings(db: Session = None) -> dict:
 
     if db:
         try:
-            db_settings = db.query(SystemSetting).filter(SystemSetting.key.like("smtp_%")).all()
+            # Check active provider
+            active_provider_setting = db.query(SystemSetting).filter(SystemSetting.key == "active_email_provider").first()
+            active_provider = active_provider_setting.value if active_provider_setting else "smtp"
+            
+            prefix = "outlook_" if active_provider == "outlook" else "smtp_"
+            
+            # Fetch relevant settings
+            db_settings = db.query(SystemSetting).filter(SystemSetting.key.like(f"{prefix}%")).all()
             for s in db_settings:
-                if s.key == "smtp_host" and s.value:
+                if s.key == f"{prefix}host" and s.value:
                     settings["host"] = s.value
-                elif s.key == "smtp_port" and s.value:
+                elif s.key == f"{prefix}port" and s.value:
                     try:
                         settings["port"] = int(s.value)
                     except ValueError:
                         pass
-                elif s.key == "smtp_user" and s.value:
+                elif s.key == f"{prefix}user" and s.value:
                     settings["user"] = s.value
-                elif s.key == "smtp_password" and s.value:
+                elif s.key == f"{prefix}password" and s.value:
                     settings["password"] = s.value
-                elif s.key == "smtp_from_name" and s.value:
+                elif s.key == f"{prefix}from_name" and s.value:
                     settings["from_name"] = s.value
         except Exception:
             pass  # Fall back to env on DB errors
@@ -52,7 +62,7 @@ def get_smtp_settings(db: Session = None) -> dict:
 
 
 def is_email_configured(db: Session = None) -> bool:
-    """Check if SMTP credentials are configured."""
+    """Check if credentials are configured."""
     settings = get_smtp_settings(db)
     return bool(settings["user"] and settings["password"])
 
