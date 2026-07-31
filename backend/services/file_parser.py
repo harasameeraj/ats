@@ -67,19 +67,20 @@ def extract_candidate_name(text: str, filename: str) -> str:
     return name.title() if name else "Unknown Candidate"
 
 
-def extract_email(text: str) -> str | None:
+from typing import Optional
+def extract_email(text: str) -> Optional[str]:
     """Try to extract an email from text."""
     match = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text)
     return match.group(0) if match else None
 
 
-def extract_phone(text: str) -> str | None:
+def extract_phone(text: str) -> Optional[str]:
     """Try to extract a phone number from text."""
     match = re.search(r"[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]{7,15}", text)
     return match.group(0).strip() if match else None
 
 
-def extract_github_url(text: str) -> str | None:
+def extract_github_url(text: str) -> Optional[str]:
     """Try to extract a GitHub profile URL from resume text."""
     # Pattern to match github.com/username
     match = re.search(r"(https?://)?(www\.)?github\.com/([a-zA-Z0-9_-]+)", text, re.IGNORECASE)
@@ -89,7 +90,7 @@ def extract_github_url(text: str) -> str | None:
     return None
 
 
-def extract_linkedin_url(text: str) -> str | None:
+def extract_linkedin_url(text: str) -> Optional[str]:
     """Try to extract a LinkedIn profile URL from resume text."""
     # Pattern to match linkedin.com/in/username
     match = re.search(r"(https?://)?(www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)", text, re.IGNORECASE)

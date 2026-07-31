@@ -628,7 +628,8 @@ def scan_github_profile(candidate_id: int, db: Session = Depends(get_db), url: O
             jd_desc = job.description
             
     # Helper to fetch public json
-    def fetch_github_json(url: str) -> dict | None:
+    from typing import Optional
+    def fetch_github_json(url: str) -> Optional[dict]:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "StitchATS-App"})
             with urllib.request.urlopen(req, timeout=5) as response:
