@@ -56,11 +56,10 @@ services:
           property: host
 
   # ---- 2. Static React frontend ----
+  # NOTE: static sites are edge-hosted globally, so no `region` or `plan` here.
   - type: web
     name: stitch-ats-frontend
     env: static
-    plan: free
-    region: oregon
     branch: main
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
