@@ -16,7 +16,7 @@ import os
 from passlib.context import CryptContext
 
 from .database import SessionLocal
-from .models import Company, User, Candidate
+from .models import Company, User, Candidate, Job
 
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -115,6 +115,29 @@ def run_auto_seed():
                 created.append(email)
         if created:
             print(f"[auto_seed] created users: {', '.join(created)}  (password: demo1234)")
+
+        # Demo job so the Send AI Test invite flow works out of the box.
+        demo_job = db.query(Job).filter(
+            Job.company_id == company.id,
+            Job.title == "Senior Full-Stack AI Developer",
+        ).first()
+        if not demo_job:
+            demo_job = Job(
+                company_id=company.id,
+                title="Senior Full-Stack AI Developer",
+                description=(
+                    "We are hiring a Senior Full-Stack AI Developer to build and ship "
+                    "production LLM features. You will own the pipeline end-to-end: "
+                    "React/TypeScript frontend, FastAPI backend, RAG and agent workflows, "
+                    "vector search, and cloud deployment. Required: 5+ years shipping "
+                    "web apps, deep Python + JavaScript, working knowledge of prompt "
+                    "engineering, embeddings, and evaluation. Nice to have: Kubernetes, "
+                    "GPU inference, agentic frameworks."
+                ),
+                jd_filename="seed_senior_fullstack_ai_developer.txt",
+            )
+            db.add(demo_job); db.commit(); db.refresh(demo_job)
+            print(f"[auto_seed] created demo job #{demo_job.id} '{demo_job.title}'")
 
         # Demo candidates for the Investigator flow
         for spec in [
