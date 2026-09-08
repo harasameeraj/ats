@@ -98,3 +98,32 @@ def root():
 @app.get("/api/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.post("/api/admin/seed-demo")
+def admin_seed_demo():
+    """
+    Force-run the demo seeder. Idempotent — safe to hit repeatedly.
+    Used to recover when AUTO_SEED_DEMO wasn't applied on a fresh deploy.
+    """
+    import os
+    os.environ["AUTO_SEED_DEMO"] = "true"
+    from .auto_seed import run_auto_seed
+    run_auto_seed()
+
+    # Report what actually exists so we can verify
+    from .database import SessionLocal
+    from .models import Company, User, Candidate
+    db = SessionLocal()
+    try:
+        demo = db.query(Company).filter(Company.name == "Demo Co").first()
+        users = db.query(User).filter(User.company_id == demo.id).all() if demo else []
+        cands = db.query(Candidate).filter(Candidate.company_id == demo.id).all() if demo else []
+        return {
+            "seeded": True,
+            "company_id": demo.id if demo else None,
+            "users": [u.email for u in users],
+            "candidates": [c.name for c in cands],
+        }
+    finally:
+        db.close()
