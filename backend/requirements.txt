@@ -8,5 +8,9 @@ python-dotenv==1.0.1
 PyPDF2==3.0.1
 python-docx==1.1.2
 pydantic==2.9.0
-passlib[bcrypt]
+# Pin bcrypt<4.1: passlib 1.7.4 breaks against bcrypt 4.1+ on Python 3.11
+# because it reads bcrypt.__about__.__version__ which was removed.
+# Without this pin, password hashing (login, signup, auto_seed) 500s.
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 PyJWT
