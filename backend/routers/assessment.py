@@ -131,9 +131,19 @@ Hiring Team
 
     msg = "Invitation sent successfully"
     if warning_msg:
-        msg = f"Candidate invited, but email delivery failed (check SMTP settings)."
+        msg = "Email delivery failed — share the assessment link with the candidate directly."
 
-    return {"message": msg, "link": link}
+    return {
+        "message":      msg,
+        "email_sent":   email_result["success"],
+        "email_error":  None if email_result["success"] else warning_msg,
+        "link":         link,
+        "candidate": {
+            "id":    candidate.id,
+            "name":  candidate.name,
+            "email": candidate.email,
+        },
+    }
 
 
 @router.get("/info/{token}", response_model=AssessmentInfoResponse)

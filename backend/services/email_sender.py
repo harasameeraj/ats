@@ -125,14 +125,17 @@ def send_email(to_email: str, subject: str, body: str, reply_to: str = None, db:
         html_part = MIMEText(html_content, "html", "utf-8")
         msg.attach(html_part)
 
-        # Connect to SMTP and send
+        # Connect to SMTP and send. Short timeout so a hostile network
+        # (e.g. Render's free tier which blocks outbound SMTP) fails in
+        # seconds instead of blocking the request for two minutes.
         context = ssl.create_default_context()
+        SMTP_TIMEOUT = 8
         if settings["port"] == 465:
-            with smtplib.SMTP_SSL(settings["host"], settings["port"], context=context) as server:
+            with smtplib.SMTP_SSL(settings["host"], settings["port"], context=context, timeout=SMTP_TIMEOUT) as server:
                 server.login(settings["user"], settings["password"])
                 server.sendmail(settings["user"], to_email, msg.as_string())
         else:
-            with smtplib.SMTP(settings["host"], settings["port"]) as server:
+            with smtplib.SMTP(settings["host"], settings["port"], timeout=SMTP_TIMEOUT) as server:
                 server.ehlo()
                 server.starttls(context=context)
                 server.ehlo()

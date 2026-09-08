@@ -25,6 +25,7 @@ export default function Screening() {
   const [importingSourcedName, setImportingSourcedName] = useState(null)
   const [showSourcingPanel, setShowSourcingPanel] = useState(false)
   const [showTalentPool, setShowTalentPool] = useState(false)
+  const [inviteResult, setInviteResult] = useState(null)  // { link, candidate, email_sent, email_error } → renders share-link modal
 
   // Tiered Scheduling / Review States
   const [selectedIds, setSelectedIds] = useState([])
@@ -454,8 +455,15 @@ export default function Screening() {
     if (!selectedJob) return
     setInvitingId(candidateId)
     try {
-      await api.inviteCandidateToAssessment(candidateId, selectedJob.id)
-      showToast('AI Assessment invitation sent successfully!')
+      const res = await api.inviteCandidateToAssessment(candidateId, selectedJob.id)
+      // Always show the share-link modal so the recruiter can copy it
+      // even when email actually delivered (they may want to send a Slack DM too).
+      setInviteResult(res)
+      if (res?.email_sent) {
+        showToast('AI Assessment invitation sent — email delivered!')
+      } else {
+        showToast('Assessment ready — email blocked, share the link manually.', 'error')
+      }
       setResults(prev => prev.map(r => {
         if (r.candidate_id === candidateId) {
           return { ...r, assessment_status: 'pending' }
@@ -466,6 +474,21 @@ export default function Screening() {
       showToast(e.message || 'Failed to send assessment invite', 'error')
     } finally {
       setInvitingId(null)
+    }
+  }
+
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('Link copied to clipboard')
+    } catch {
+      // Fallback for old browsers / non-https origins
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy'); showToast('Link copied to clipboard') } catch {}
+      document.body.removeChild(ta)
     }
   }
 
@@ -1755,6 +1778,108 @@ export default function Screening() {
       )}
 
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+
+      {/* Share-link modal — always shown after invite, especially useful when
+          outbound SMTP is blocked (Render free tier) and the recruiter needs
+          to send the assessment link manually via Slack / WhatsApp / etc. */}
+      {inviteResult && (
+        <div
+          onClick={() => setInviteResult(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: 20,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--card)', color: 'var(--t1)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r2, 12px)',
+              boxShadow: 'var(--shadow-lg)',
+              width: 'min(560px, 100%)', padding: '22px 24px',
+              fontFamily: 'var(--font)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+              <span style={{ fontSize: 20 }}>{inviteResult.email_sent ? '✉️' : '🔗'}</span>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                {inviteResult.email_sent ? 'Invitation sent' : 'Share this assessment link'}
+              </h3>
+              <button
+                onClick={() => setInviteResult(null)}
+                style={{
+                  marginLeft: 'auto', background: 'transparent', border: 'none',
+                  color: 'var(--t3)', cursor: 'pointer', fontSize: 18,
+                }}
+              >×</button>
+            </div>
+
+            <p style={{ margin: '4px 0 14px', fontSize: 13, color: 'var(--t2)', lineHeight: 1.5 }}>
+              {inviteResult.email_sent
+                ? <>Email delivered to <b>{inviteResult.candidate?.email}</b>. You can also copy the link below.</>
+                : <>The email API rejected outbound SMTP on this host. Copy the link and send it to <b>{inviteResult.candidate?.email}</b> via any channel (Slack, WhatsApp, another email account). The candidate&apos;s assessment token is already active.</>
+              }
+            </p>
+
+            {inviteResult.email_error && (
+              <div style={{
+                background: 'var(--orange-bg)', color: 'var(--orange)',
+                border: '1px solid var(--orange)', borderRadius: 6,
+                padding: '8px 10px', fontSize: 12, marginBottom: 12,
+                fontFamily: 'var(--mono)',
+              }}>
+                {inviteResult.email_error}
+              </div>
+            )}
+
+            <label style={{ display: 'block', fontSize: 11, color: 'var(--t3)', fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 }}>
+              ASSESSMENT LINK
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                readOnly value={inviteResult.link || ''}
+                onFocus={e => e.target.select()}
+                style={{
+                  flex: 1, padding: '10px 12px', borderRadius: 8,
+                  border: '1px solid var(--border)', background: 'var(--card-h)',
+                  color: 'var(--t1)', fontFamily: 'var(--mono)', fontSize: 12,
+                }}
+              />
+              <button
+                onClick={() => copyToClipboard(inviteResult.link)}
+                style={{
+                  padding: '10px 18px', fontWeight: 700, fontSize: 13,
+                  background: 'var(--grad)', color: '#fff', border: 'none',
+                  borderRadius: 8, cursor: 'pointer', minWidth: 92,
+                }}
+              >📋 Copy</button>
+            </div>
+
+            <div style={{
+              marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end',
+            }}>
+              <a
+                href={inviteResult.link} target="_blank" rel="noreferrer"
+                style={{
+                  padding: '9px 14px', fontSize: 13, fontWeight: 600,
+                  color: 'var(--brand-green)', textDecoration: 'none',
+                  border: '1px solid var(--brand-green)', borderRadius: 8,
+                }}
+              >Open in new tab</a>
+              <button
+                onClick={() => setInviteResult(null)}
+                style={{
+                  padding: '9px 16px', fontWeight: 700, fontSize: 13,
+                  background: 'var(--card-h)', color: 'var(--t2)',
+                  border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer',
+                }}
+              >Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
