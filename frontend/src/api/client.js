@@ -1,4 +1,13 @@
-export const BASE_URL = 'http://localhost:8001';
+// Prod: Render's blueprint injects VITE_API_BASE_URL as the backend hostname
+// (e.g. stitch-ats-backend.onrender.com). Local dev: falls back to localhost.
+// Normalizer: if the value has no protocol, prepend https://.
+function _normalizeBase(v) {
+  if (!v) return 'http://localhost:8001';
+  const s = String(v).trim().replace(/\/$/, '');
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
+}
+export const BASE_URL = _normalizeBase(import.meta.env.VITE_API_BASE_URL);
 const BASE = BASE_URL;
 
 async function request(url, options = {}) {

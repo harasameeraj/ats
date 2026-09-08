@@ -1,20 +1,76 @@
+# Render Blueprint for Stitch ATS
+#
+# Deploy from the Render dashboard: New + → Blueprint → pick this repo.
+# You will be prompted for the sync:false env vars (API keys, SMTP).
+#
+# Free-tier notes:
+#   * Web services spin down after 15 min of inactivity — first request
+#     after that takes ~30s to warm up. Ping the site 1 min before your demo.
+#   * There is no persistent disk on the free tier, so SQLite data is lost
+#     on every deploy/spin-down. AUTO_SEED_DEMO=true rebuilds the demo
+#     accounts and Alex/Priya on every cold start.
+
 services:
-  # 1. FastAPI Python Backend
+
+  # ---- 1. FastAPI backend ----
   - type: web
     name: stitch-ats-backend
     env: python
+    plan: free
+    region: oregon
+    branch: main
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port 10000
+    # Render sets $PORT; do NOT hard-code it.
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: AUTO_SEED_DEMO
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      # LLM providers — set these in Render UI, do NOT commit them.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
-        sync: false # Render will prompt you to type your OpenAI key
+        sync: false
+      # SMTP for candidate emails — use your Gmail app password.
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: Stitch ATS
+      # Cross-service link so assessment emails point to the live frontend.
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: stitch-ats-frontend
+          property: host
 
-  # 2. React Static Frontend
+  # ---- 2. Static React frontend ----
   - type: web
     name: stitch-ats-frontend
     env: static
+    plan: free
+    region: oregon
+    branch: main
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
+    envVars:
+      # Baked into the JS bundle at build time.
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: stitch-ats-backend
+          property: host
     routes:
       - type: rewrite
         source: /*

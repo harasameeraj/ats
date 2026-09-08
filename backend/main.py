@@ -20,25 +20,44 @@ app = FastAPI(
 app.add_middleware(TenantMiddleware)
 
 import os
+import re
+from typing import Optional
 
-# CORS — allow React dev server and production URLs
+# CORS — allow React dev servers and any deployed frontend named in env vars.
 allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:3000"
+    "http://localhost:3000",
 ]
 
-prod_origin = os.getenv("FRONTEND_URL")
-if prod_origin:
-    allowed_origins.append(prod_origin)
-else:
+def _origin_from(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    s = raw.strip().rstrip("/")
+    return s if re.match(r"^https?://", s, re.I) else f"https://{s}"
+
+# Accept the primary FRONTEND_URL (also used for email links) and, optionally,
+# a comma-separated list of additional allowed origins.
+for env_var in ("FRONTEND_URL", "ALLOWED_ORIGINS"):
+    val = os.getenv(env_var)
+    if not val:
+        continue
+    for part in val.split(","):
+        o = _origin_from(part)
+        if o and o not in allowed_origins:
+            allowed_origins.append(o)
+
+# Fallback for local convenience — DO NOT enable in prod (blocks credentials).
+if not any(o.startswith("https://") for o in allowed_origins):
     allowed_origins.append("*")
 
-# If wildcard is in allowed origins, allow_credentials must be False in FastAPI CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True if "*" not in allowed_origins else False,
+    allow_credentials=("*" not in allowed_origins),
+    # Regex catches any *.onrender.com origin — safe because we still send no
+    # cookies (JWT lives in localStorage) and no credentialed CORS.
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -65,8 +84,10 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 @app.on_event("startup")
 def startup():
-    """Initialize database tables on startup."""
+    """Initialize database tables and (optionally) seed demo data."""
     init_db()
+    from .auto_seed import run_auto_seed
+    run_auto_seed()
 
 
 @app.get("/")

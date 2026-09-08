@@ -62,10 +62,11 @@ def invite_candidate(candidate_id: int, job_id: int, db: Session = Depends(get_d
 
     db.commit()
 
-    # Create link
-    # In development it's localhost:5173, in production we can use FRONTEND_URL
-    import os
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    # Create link. FRONTEND_URL may be a bare host (Render fromService: host)
+    # or a full URL — normalize to https:// if no scheme is present.
+    import os, re
+    _raw = os.getenv("FRONTEND_URL", "http://localhost:5173").strip().rstrip("/")
+    frontend_url = _raw if re.match(r"^https?://", _raw, re.I) else f"https://{_raw}"
     link = f"{frontend_url}/assessment/{token}"
 
     # Send email

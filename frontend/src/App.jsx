@@ -41,10 +41,20 @@ const pageNames = {
 }
 
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, roles }) {
   const { user } = useAuth();
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  // Role gate — accepts a single role or an array. If the user's role isn't
+  // in the list, bounce them to their own home so they can't render
+  // recruiter-only pages (even briefly).
+  if (roles) {
+    const allowed = Array.isArray(roles) ? roles : [roles];
+    if (!allowed.includes(user.role)) {
+      const home = user.role === 'candidate' ? '/candidate-portal' : '/dashboard';
+      return <Navigate to={home} replace />;
+    }
   }
   return children;
 }
@@ -425,15 +435,15 @@ function AppContent() {
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/screening" element={<ProtectedRoute><Screening /></ProtectedRoute>} />
-            <Route path="/job-postings" element={<ProtectedRoute><JobPostings /></ProtectedRoute>} />
-            <Route path="/interviews" element={<ProtectedRoute><Interviews /></ProtectedRoute>} />
-            <Route path="/client-review" element={<ProtectedRoute><ClientReview /></ProtectedRoute>} />
-            <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-            <Route path="/communications" element={<ProtectedRoute><Communications /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/candidate-portal" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
-            <Route path="/investigator" element={<ProtectedRoute><Investigator /></ProtectedRoute>} />
+            <Route path="/screening" element={<ProtectedRoute roles="recruiter"><Screening /></ProtectedRoute>} />
+            <Route path="/job-postings" element={<ProtectedRoute roles="recruiter"><JobPostings /></ProtectedRoute>} />
+            <Route path="/interviews" element={<ProtectedRoute roles="recruiter"><Interviews /></ProtectedRoute>} />
+            <Route path="/client-review" element={<ProtectedRoute roles="recruiter"><ClientReview /></ProtectedRoute>} />
+            <Route path="/onboarding" element={<ProtectedRoute roles="recruiter"><Onboarding /></ProtectedRoute>} />
+            <Route path="/communications" element={<ProtectedRoute roles="recruiter"><Communications /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute roles={['recruiter', 'delivery_head']}><Settings /></ProtectedRoute>} />
+            <Route path="/candidate-portal" element={<ProtectedRoute roles="candidate"><CandidateDashboard /></ProtectedRoute>} />
+            <Route path="/investigator" element={<ProtectedRoute roles="recruiter"><Investigator /></ProtectedRoute>} />
           </Routes>
         </div>
       </main>
