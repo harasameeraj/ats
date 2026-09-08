@@ -48,12 +48,11 @@ services:
         sync: false
       - key: SMTP_FROM_NAME
         value: Stitch ATS
-      # Cross-service link so assessment emails point to the live frontend.
+      # Point candidate assessment emails at the live frontend.
+      # (Runtime env var — fromService works here, but a plain value is
+      # simpler and never breaks.)
       - key: FRONTEND_URL
-        fromService:
-          type: web
-          name: stitch-ats-frontend
-          property: host
+        value: https://stitch-ats-frontend.onrender.com
 
   # ---- 2. Static React frontend ----
   # NOTE: static sites are edge-hosted globally, so no `region` or `plan` here.
@@ -64,12 +63,11 @@ services:
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     envVars:
-      # Baked into the JS bundle at build time.
+      # Baked into the JS bundle at BUILD time by Vite. Render's
+      # `fromService` does NOT inject build-time env vars on static sites,
+      # so we must use a plain `value` here.
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: stitch-ats-backend
-          property: host
+        value: https://stitch-ats-backend.onrender.com
     routes:
       - type: rewrite
         source: /*
