@@ -123,7 +123,7 @@ export default function Login() {
       <div className="auth-form-section">
         <div className="auth-brand-mark">
           <img src="/derisk_logo.png" alt="" />
-          <span>Derisk360</span>
+          <span>Stitch ATS</span>
         </div>
 
         <div className="auth-card-modern">
@@ -131,7 +131,7 @@ export default function Login() {
             <>
               <div className="auth-card-header">
                 <h2>Sign in</h2>
-                <p>Continue to your Derisk360 workspace.</p>
+                <p>Continue to your Stitch ATS workspace.</p>
               </div>
 
               {loginError && <div className="alert-error">{loginError}</div>}
@@ -182,7 +182,7 @@ export default function Login() {
             <>
               <div className="auth-card-header">
                 <h2>Register your company</h2>
-                <p>Set up your team's Derisk360 workspace.</p>
+                <p>Set up your team's Stitch ATS workspace.</p>
               </div>
 
               {signupStatus.error && <div className="alert-error">{signupStatus.error}</div>}

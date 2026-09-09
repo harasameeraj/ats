@@ -7,7 +7,7 @@ export default function Settings() {
     smtp_port: 587,
     smtp_user: '',
     smtp_password: '',
-    smtp_from_name: 'Derisk360'
+    smtp_from_name: 'Stitch ATS'
   })
 
   const [outlookForm, setOutlookForm] = useState({
@@ -15,7 +15,7 @@ export default function Settings() {
     smtp_port: 587,
     smtp_user: 'sameeraj@qcerebrum.com',
     smtp_password: '',
-    smtp_from_name: 'Derisk360'
+    smtp_from_name: 'Stitch ATS'
   })
 
   const [activeProvider, setActiveProvider] = useState('smtp')
@@ -54,14 +54,14 @@ export default function Settings() {
         smtp_port: smtpData.smtp_port || 587,
         smtp_user: smtpData.smtp_user || '',
         smtp_password: smtpData.smtp_password_masked || '',
-        smtp_from_name: smtpData.smtp_from_name || 'Derisk360'
+        smtp_from_name: smtpData.smtp_from_name || 'Stitch ATS'
       })
       setOutlookForm({
         smtp_host: outlookData.smtp_host || 'smtp-mail.outlook.com',
         smtp_port: outlookData.smtp_port || 587,
         smtp_user: outlookData.smtp_user || 'sameeraj@qcerebrum.com',
         smtp_password: outlookData.smtp_password_masked || '',
-        smtp_from_name: outlookData.smtp_from_name || 'Derisk360'
+        smtp_from_name: outlookData.smtp_from_name || 'Stitch ATS'
       })
       setGcalForm({
         gcal_organizer_email: gcalData.gcal_organizer_email || 'harasameeraj.7@gmail.com',
@@ -271,7 +271,7 @@ export default function Settings() {
 
           <div className="form-group" style={{ marginBottom: '1rem' }}>
             <label className="form-label">Sender Display Name</label>
-            <input className="form-input" value={smtpForm.smtp_from_name} onChange={e => handleInputChange('smtp_from_name', e.target.value)} placeholder="e.g. Derisk360 Hiring Team" />
+            <input className="form-input" value={smtpForm.smtp_from_name} onChange={e => handleInputChange('smtp_from_name', e.target.value)} placeholder="e.g. Stitch ATS Hiring Team" />
           </div>
 
           <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -349,7 +349,7 @@ export default function Settings() {
 
           <div className="form-group" style={{ marginBottom: '1rem' }}>
             <label className="form-label">Sender Display Name</label>
-            <input className="form-input" value={outlookForm.smtp_from_name} onChange={e => handleOutlookChange('smtp_from_name', e.target.value)} placeholder="e.g. Derisk360 Hiring Team" />
+            <input className="form-input" value={outlookForm.smtp_from_name} onChange={e => handleOutlookChange('smtp_from_name', e.target.value)} placeholder="e.g. Stitch ATS Hiring Team" />
           </div>
 
           <div className="form-group" style={{ marginBottom: '1rem' }}>

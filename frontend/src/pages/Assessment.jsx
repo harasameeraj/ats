@@ -423,7 +423,7 @@ export default function Assessment() {
     // Left Sign
     ctx.fillStyle = '#0f172a'
     ctx.font = 'italic 20px Georgia, serif'
-    ctx.fillText('Derisk360', 220, 525)
+    ctx.fillText('Stitch ATS', 220, 525)
     
     ctx.strokeStyle = '#cbd5e1'
     ctx.lineWidth = 1.5
@@ -454,7 +454,7 @@ export default function Assessment() {
     
     // Download
     const link = document.createElement('a')
-    link.download = `${info.candidate_name.replace(/\s+/g, '_')}_Derisk360_Assessment_Certificate.png`
+    link.download = `${info.candidate_name.replace(/\s+/g, '_')}_Stitch ATS_Assessment_Certificate.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
   }
@@ -817,7 +817,7 @@ export default function Assessment() {
               </defs>
             </svg>
           </div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.5rem' }}>Derisk360 AI Assessment</h1>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '0.5rem' }}>Stitch ATS AI Assessment</h1>
           <p style={{ fontSize: '0.9rem', color: 'var(--blue)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem' }}>
             {info.job_title} Position
           </p>
@@ -966,7 +966,7 @@ export default function Assessment() {
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', borderTop: '1px solid #cbd5e1', paddingTop: '0.75rem' }}>
                       <div style={{ textAlign: 'left' }}>
-                        <div style={{ fontSize: '0.7rem', fontStyle: 'italic', color: '#0f172a' }}>Derisk360</div>
+                        <div style={{ fontSize: '0.7rem', fontStyle: 'italic', color: '#0f172a' }}>Stitch ATS</div>
                         <div style={{ fontSize: '0.52rem', color: '#94a3b8', fontWeight: 'bold' }}>ISSUING AUTHORITY</div>
                       </div>
                       

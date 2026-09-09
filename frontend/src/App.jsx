@@ -145,7 +145,7 @@ function Topbar() {
     <div className="topbar">
       <div className="topbar-left">
         <div className="topbar-breadcrumb">
-          Derisk360 / <span>{currentPage}</span>
+          Stitch ATS / <span>{currentPage}</span>
         </div>
       </div>
       
@@ -294,10 +294,10 @@ function AppContent() {
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <img src="/derisk_logo.png" alt="Derisk360 Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
+            <img src="/derisk_logo.png" alt="Stitch ATS Logo" style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'contain' }} />
             {sidebarOpen && (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="sidebar-title">Derisk360</span>
+                <span className="sidebar-title">Stitch ATS</span>
                 <span className="sidebar-subtitle" style={{ fontSize: '0.65rem', color: 'var(--t3)', fontWeight: '500', marginTop: '2px' }}>
                   {activeRole === 'Recruiting' 
                     ? 'Enterprise Recruitment' 
