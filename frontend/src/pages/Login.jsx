@@ -115,34 +115,23 @@ export default function Login() {
 
   return (
     <div className="auth-page">
-      <div className="auth-hero">
-        <div className="auth-hero-content">
-          <div className="auth-logo-wrapper">
-            <img src="/derisk_logo.png" alt="Derisk360" />
-            <h1>Derisk360</h1>
-          </div>
-          <h2>The <em>AI-powered</em> hiring platform for a world of inflated CVs.</h2>
-          <p>
-            Semantic screening, autonomous claim verification, and a Trust Report
-            for every candidate — before you ever pick up the phone.
-          </p>
-        </div>
-        <div className="auth-hero-footer">
-          <span className="auth-hero-status">
-            <span className="dot" aria-hidden="true"></span>
-            ALL SYSTEMS OPERATIONAL
-          </span>
-          <span>© 2026 · Derisk360</span>
-        </div>
-      </div>
+      <span className="auth-status-pill" aria-hidden="true">
+        <span className="dot"></span>
+        agent · online
+      </span>
 
       <div className="auth-form-section">
+        <div className="auth-brand-mark">
+          <img src="/derisk_logo.png" alt="" />
+          <span>Derisk360</span>
+        </div>
+
         <div className="auth-card-modern">
           {authMode === 'login' && (
             <>
               <div className="auth-card-header">
-                <h2>Welcome Back</h2>
-                <p>Sign in to your account</p>
+                <h2>Sign in</h2>
+                <p>Continue to your Derisk360 workspace.</p>
               </div>
 
               {loginError && <div className="alert-error">{loginError}</div>}
@@ -192,8 +181,8 @@ export default function Login() {
           {authMode === 'signup_company' && (
             <>
               <div className="auth-card-header">
-                <h2>Company Registration</h2>
-                <p>Onboard your team to Derisk360</p>
+                <h2>Register your company</h2>
+                <p>Set up your team's Derisk360 workspace.</p>
               </div>
 
               {signupStatus.error && <div className="alert-error">{signupStatus.error}</div>}
@@ -273,8 +262,8 @@ export default function Login() {
           {authMode === 'signup_candidate' && (
             <>
               <div className="auth-card-header">
-                <h2>Candidate Registration</h2>
-                <p>Create an account to browse and apply for jobs</p>
+                <h2>Create your account</h2>
+                <p>Apply to roles and track your assessments.</p>
               </div>
 
               {signupStatus.error && <div className="alert-error">{signupStatus.error}</div>}
@@ -324,6 +313,10 @@ export default function Login() {
               </div>
             </>
           )}
+        </div>
+
+        <div className="auth-footer">
+          <span>v1.0 · autonomous hiring agent</span>
         </div>
       </div>
     </div>
