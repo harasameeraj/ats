@@ -121,11 +121,18 @@ export default function Login() {
             <img src="/derisk_logo.png" alt="Derisk360" />
             <h1>Derisk360</h1>
           </div>
-          <h2>The AI-Powered Hiring Platform</h2>
+          <h2>The <em>AI-powered</em> hiring platform for a world of inflated CVs.</h2>
           <p>
-            Streamline your enterprise recruitment, technical evaluations, and 
-            operational delivery all in one unified ecosystem.
+            Semantic screening, autonomous claim verification, and a Trust Report
+            for every candidate — before you ever pick up the phone.
           </p>
+        </div>
+        <div className="auth-hero-footer">
+          <span className="auth-hero-status">
+            <span className="dot" aria-hidden="true"></span>
+            ALL SYSTEMS OPERATIONAL
+          </span>
+          <span>© 2026 · Derisk360</span>
         </div>
       </div>
 
