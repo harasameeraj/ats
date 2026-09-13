@@ -113,16 +113,59 @@ export default function Login() {
     setter(newList.length ? newList : ['']);
   };
 
+  // Inline SVG icons (no icon library needed)
+  const MailIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </svg>
+  );
+  const LockIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+  const StitchMark = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 4l12 16M6 20L18 4M4 12h16" />
+    </svg>
+  );
+
   return (
     <div className="auth-page">
-      <span className="auth-status-pill" aria-hidden="true">
-        <span className="dot"></span>
-        agent · online
-      </span>
+      {/* Ambient network overlay — evokes the "connected agent" motif */}
+      <svg className="auth-network" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <defs>
+          <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#34d399" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <g stroke="rgba(52,211,153,0.28)" strokeWidth="0.6" fill="none">
+          <path d="M120 200 L340 120 L560 260 L780 140 L980 300 L1220 180 L1460 280" />
+          <path d="M80 480 L280 380 L520 520 L740 400 L960 540 L1200 460 L1500 560" />
+          <path d="M160 720 L360 640 L600 780 L820 660 L1040 800 L1280 700 L1520 780" />
+          <path d="M340 120 L280 380 M560 260 L520 520 M780 140 L740 400 M980 300 L960 540 M1220 180 L1200 460" />
+          <path d="M280 380 L360 640 M520 520 L600 780 M740 400 L820 660 M960 540 L1040 800 M1200 460 L1280 700" />
+        </g>
+        <g fill="url(#nodeGlow)">
+          {[[120,200],[340,120],[560,260],[780,140],[980,300],[1220,180],[1460,280],
+            [80,480],[280,380],[520,520],[740,400],[960,540],[1200,460],[1500,560],
+            [160,720],[360,640],[600,780],[820,660],[1040,800],[1280,700],[1520,780]].map((p,i)=>(
+            <circle key={i} cx={p[0]} cy={p[1]} r="6" />
+          ))}
+        </g>
+        <g fill="#34d399">
+          {[[340,120],[780,140],[520,520],[960,540],[600,780],[1280,700]].map((p,i)=>(
+            <circle key={i} cx={p[0]} cy={p[1]} r="1.6" />
+          ))}
+        </g>
+      </svg>
 
       <div className="auth-form-section">
         <div className="auth-brand-mark">
-          <img src="/derisk_logo.png" alt="" />
+          <span className="auth-brand-icon"><StitchMark /></span>
           <span>Stitch ATS</span>
         </div>
 
@@ -136,43 +179,47 @@ export default function Login() {
 
               {loginError && <div className="alert-error">{loginError}</div>}
               {signupStatus.success && <div className="alert-success">{signupStatus.success}</div>}
-              
+
               <form onSubmit={handleLogin}>
                 <div className="form-group">
                   <label>Email Address</label>
-                  <input 
-                    required 
-                    type="email" 
-                    value={loginEmail} 
-                    onChange={(e) => setLoginEmail(e.target.value)} 
-                    placeholder="you@company.com" 
-                  />
+                  <div className="input-wrap">
+                    <span className="input-icon"><MailIcon /></span>
+                    <input
+                      required
+                      type="email"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="you@company.com"
+                    />
+                  </div>
                 </div>
-                
+
                 <div className="form-group">
                   <label>Password</label>
-                  <input 
-                    required 
-                    type="password" 
-                    value={loginPassword} 
-                    onChange={(e) => setLoginPassword(e.target.value)} 
-                    placeholder="••••••••" 
-                  />
+                  <div className="input-wrap">
+                    <span className="input-icon"><LockIcon /></span>
+                    <input
+                      required
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="password"
+                    />
+                  </div>
                 </div>
-                
+
                 <button type="submit" className="btn-primary auth-submit" disabled={loginLoading}>
-                  {loginLoading ? 'Signing in...' : 'Sign In'}
+                  {loginLoading ? 'Signing in…' : 'Sign In to your Workspace'}
                 </button>
               </form>
 
-              <div className="auth-toggle" style={{ flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                  <span>Are you an Employer?</span>
-                  <button type="button" onClick={() => { setAuthMode('signup_company'); setSignupStatus({}); }}>Register your company</button>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                  <span>Looking for a job?</span>
-                  <button type="button" onClick={() => { setAuthMode('signup_candidate'); setSignupStatus({}); }}>Register as Candidate</button>
+              <div className="auth-register-strip">
+                <span className="auth-register-label">Register an Account:</span>
+                <div className="auth-register-links">
+                  <button type="button" onClick={() => { setAuthMode('signup_company'); setSignupStatus({}); }}>Employer</button>
+                  <span className="auth-register-sep" aria-hidden="true">|</span>
+                  <button type="button" onClick={() => { setAuthMode('signup_candidate'); setSignupStatus({}); }}>Candidate</button>
                 </div>
               </div>
             </>
@@ -316,9 +363,11 @@ export default function Login() {
         </div>
 
         <div className="auth-footer">
-          <span>v1.0 · autonomous hiring agent</span>
+          <span>Stitch ATS v1.0 <span className="auth-footer-sep">|</span> Autonomous Hiring Agent</span>
         </div>
       </div>
+
+      <span className="auth-sparkle" aria-hidden="true">✦</span>
     </div>
   );
 }
