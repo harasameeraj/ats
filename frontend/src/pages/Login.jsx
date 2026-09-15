@@ -222,6 +222,34 @@ export default function Login() {
                   <button type="button" onClick={() => { setAuthMode('signup_candidate'); setSignupStatus({}); }}>Candidate</button>
                 </div>
               </div>
+
+              {/* Demo-account quick-fill — for judges / first-time reviewers.
+                  Fills the form; user still clicks Sign In to authenticate. */}
+              <div className="auth-demo-strip">
+                <span className="auth-demo-label">Try a demo account</span>
+                <div className="auth-demo-chips">
+                  {[
+                    { role: 'Recruiter',     email: 'recruiter@demo.com', icon: '👤' },
+                    { role: 'Tech Panel',    email: 'tech@demo.com',      icon: '💻' },
+                    { role: 'Delivery Head', email: 'delivery@demo.com',  icon: '🎯' },
+                  ].map(({ role, email, icon }) => (
+                    <button
+                      key={email}
+                      type="button"
+                      className="auth-demo-chip"
+                      title={`Fill ${email}`}
+                      onClick={() => {
+                        setLoginEmail(email);
+                        setLoginPassword('demo1234');
+                        setLoginError('');
+                      }}
+                    >
+                      <span className="auth-demo-icon" aria-hidden="true">{icon}</span>
+                      <span className="auth-demo-role">{role}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           )}
 
